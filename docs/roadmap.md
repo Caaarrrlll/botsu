@@ -156,7 +156,7 @@ search/URL ──► yt-dlp (subprocess) ──► stream URL ──► ffmpeg �
 
 - [x] **Voice adapter trait** in the core: `join`, `leave`, `play(source)`, `stop`, `is_playing`, `is_connected`. Track end is detected by polling `is_playing` once a second (works the same on both platforms). `set_paused` pauses (songbird's pause on Discord; a pause flag in the vendored Fluxer player).
 - [x] **Queue** in the core, per server (`music.rs`): `music play|skip|stop|queue|now|remove|clear|shuffle|join|leave`. Playlists up to 100 tracks; queue up to 500. Anyone in the bot's voice channel controls it, mods from anywhere. Leaves after 10 minutes without sound.
-- [x] **Pause/resume:** `music pause|resume`. A paused bot still leaves after 10 minutes.
+- [x] **Pause/resume:** `music pause|resume`. A paused bot still leaves after 10 minutes. Confirmed on Fluxer 2026-11-19.
 - [ ] Parked: volume (Discord only: songbird can, fluxer-rust's `play_music` can't).
 - [x] **yt-dlp** as a subprocess (`ytdlp.rs`), off the event loop. Lookup with `--flat-playlist -J` when queued (title, length, page URL); the audio is fetched **when a track starts** (`yt-dlp -o -` piped into ffmpeg; YouTube often refuses bare stream URLs). Search via `ytsearch1:`.
 - [x] **ffmpeg** reads yt-dlp's output on stdin on both platforms (Fluxer via the vendored `play_input` patch); `-reconnect` flags are added for http inputs.
@@ -166,7 +166,7 @@ search/URL ──► yt-dlp (subprocess) ──► stream URL ──► ffmpeg �
 - [x] **Discord voice:** songbird, with DAVE confirmed in phase 0.
 - [x] **Fluxer voice:** botsu's patched fluxer-rust (`vendor/`) adds `play_input`: ffmpeg with reconnect flags, reading yt-dlp's output from stdin, errors returned to botsu instead of posted to a channel. Both platforms now pipe `yt-dlp -o -` into ffmpeg.
 - [x] Docker image ships Deno (yt-dlp downloads itself); the native Linux guide lists ffmpeg and Deno.
-- [x] Memory while playing: about 230 MB for the container (Fluxer, 2026-11-19), against Red + Lavalink's 520 MB to 1.2 GB.
+- [x] Memory: about 60 MB idle (target: under 100 MB) and about 230 MB while playing, for the container (2026-11-19), against Red + Lavalink's 520 MB to 1.2 GB.
 
 **Done when:** play, queue and skip work on Discord and Fluxer, playback survives a network hiccup, and yt-dlp can be updated without a new image.
 
