@@ -74,7 +74,7 @@ jobs:
       # (source, revision, version) so Docker Hub and Unraid link back to the repo.
       - id: meta
         if: env.PUBLISH == 'true'
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
           tags: |
