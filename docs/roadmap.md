@@ -98,7 +98,7 @@ Get the project building and publishing itself before the bigger features land.
 
 ### Docker Hub
 - [x] Docker Hub repository `caaarrrlll/botsu` (public; created by the first manual push on 2026-11-19).
-- [ ] **User:** Docker Hub access token (Read & Write) stored as the GitHub secret `DOCKERHUB_TOKEN`. The username is in the workflow.
+- [x] Docker Hub access token (Read & Write) stored as the GitHub secret `DOCKERHUB_TOKEN` (2026-11-19; first automatic publish: run 44495320555, `sha-a1e8a85`). The username is in the workflow.
 - [x] **Release job** in the same workflow, after the checks pass, only on `master` and `v*` tags: buildx + metadata + build-push with the GitHub Actions layer cache. Tags: `latest` and `sha-<short>` on `master`; `X.Y.Z` and `X.Y` on tags `vX.Y.Z`.
 - [x] `linux/amd64`. `linux/arm64` only if phase 0 finds a prebuilt libwebrtc, built on a native arm64 runner (emulated webrtc builds would be very slow).
 - [x] OCI labels (source, revision, version) via `docker/metadata-action`, so Docker Hub and Unraid link back to the repo.
