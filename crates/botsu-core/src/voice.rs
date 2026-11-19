@@ -1,6 +1,6 @@
 //! Voice: the platform-neutral interface (Discord: songbird; Fluxer: LiveKit), the idle timer, and
-//! the `audio` test command. Phase 0 uses it to check that both platforms can play audio; phase 6
-//! (music) builds the queue on top of the same interface.
+//! the `music` command (still the phase 0 voice test: join, tone, leave). Phase 6 builds the
+//! queue on top of the same interface.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -109,14 +109,14 @@ pub async fn test_tone() -> Result<PathBuf> {
     Ok(path)
 }
 
-/// `audio join|play|stop|leave|where`: manual voice test, bot owners only. Leaves a voice
+/// `music join|play|stop|leave|where`: manual voice test, bot owners only. Leaves a voice
 /// channel by itself after 10 minutes without sound.
-pub struct AudioCommand {
+pub struct MusicCommand {
     adapters: Vec<Arc<dyn VoiceAdapter>>,
     watching: Arc<Mutex<HashSet<(Platform, String)>>>,
 }
 
-impl AudioCommand {
+impl MusicCommand {
     pub fn new(adapters: Vec<Arc<dyn VoiceAdapter>>) -> Self {
         Self {
             adapters,
@@ -126,24 +126,24 @@ impl AudioCommand {
 
     fn usage(p: &str) -> String {
         format!(
-            "Audio test (bot owners):\n\
-             `{p}audio join [channel]`: join your voice channel, or the given one\n\
-             `{p}audio play [url]`: play a 10-second test tone, or a direct audio link\n\
-             `{p}audio stop` / `{p}audio leave`\n\
-             `{p}audio where`: who I can see in voice here\n\
+            "Music (bot owners while it's a voice test):\n\
+             `{p}music join [channel]`: join your voice channel, or the given one\n\
+             `{p}music play [url]`: play a 10-second test tone, or a direct audio link\n\
+             `{p}music stop` / `{p}music leave`\n\
+             `{p}music where`: who I can see in voice here\n\
              I leave by myself after 10 minutes without sound."
         )
     }
 }
 
 #[async_trait]
-impl Command for AudioCommand {
+impl Command for MusicCommand {
     fn name(&self) -> &'static str {
-        "audio"
+        "music"
     }
 
     fn help(&self) -> &'static str {
-        "Audio test: join, play, stop, leave, where (bot owners)."
+        "Voice test for now: join, play, stop, leave, where (bot owners)."
     }
 
     fn level(&self) -> Level {
@@ -159,7 +159,7 @@ impl Command for AudioCommand {
             .find(|a| a.platform() == platform)
             .ok_or(Error::Unsupported {
                 platform,
-                op: "audio",
+                op: "music",
             })?;
         let Some(guild) = ctx.message.guild_id.clone() else {
             return Err(Error::Usage("Voice only works in a server.".into()));
@@ -184,7 +184,7 @@ impl Command for AudioCommand {
                 let Some(target) = target else {
                     return Err(Error::Usage(format!(
                         "I can't see you in a voice channel. Join one (or leave and rejoin it), \
-                         or use `{}audio join <channel id>`.",
+                         or use `{}music join <channel id>`.",
                         ctx.prefix
                     )));
                 };
@@ -192,7 +192,7 @@ impl Command for AudioCommand {
                 voice.join(&guild, &target).await?;
                 spawn_idle_watch(voice.clone(), guild.clone(), self.watching.clone());
                 ctx.reply(&format!(
-                    "Joined. Try `{}audio play`. I leave after 10 minutes without sound.",
+                    "Joined. Try `{}music play`. I leave after 10 minutes without sound.",
                     ctx.prefix
                 ))
                 .await?;

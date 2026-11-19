@@ -79,7 +79,7 @@ them.
 | Audio path | ffmpeg → 48 kHz stereo f32 PCM → songbird `RawAdapter` (no decoders compiled in) | fluxer-rust `play_music` (ffmpeg → s16 PCM → LiveKit) |
 | Who is in voice | GUILD_CREATE snapshot + VOICE_STATE_UPDATE (no serenity cache) | GUILD_SYNC / PASSIVE_UPDATES snapshots + VOICE_STATE_UPDATE |
 
-`main` creates the voice adapters before the platforms connect, hands them to the `audio` command
+`main` creates the voice adapters before the platforms connect, hands them to the `music` command
 (a manual test, bot owners only) and passes each to its platform's `run`, which fills in the
 connection and voice states. Phase 6 (music) builds its queue on this interface. The Docker image
 carries a static ffmpeg binary (`mwader/static-ffmpeg`) because Debian's package adds ~650 MB of
@@ -228,12 +228,19 @@ everyone.
 | Command | Level |
 |---|---|
 | `ping`, `help`, `tube`/`twitch` `add`/`list`/`remove` | everyone |
-| `cleanup` | mod |
-| `warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`, `untimeout`, `case`, `cases`, `reason`, `unwarn`, `bans` | mod (`reason` on someone else's case: admin) |
-| `warnings` | everyone for themselves; mod for others |
-| `addrole`, `removerole`, `announce` | admin (roles with Administrator: server owner) |
+| `mod cleanup` | mod |
+| `mod warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`, `untimeout`, `case`, `cases`, `reason`, `unwarn`, `bans` | mod (`reason` on someone else's case: admin) |
+| `mod warnings` | everyone for themselves; mod for others |
+| `admin addrole`, `removerole`, `announce` | admin (roles with Administrator: server owner) |
 | `set` | server owner |
-| `tube`/`twitch import`, `tube shorts`, `audio` | bot owner (`ctx.require_owner()` / `level()`) |
+| `tube`/`twitch import`, `tube shorts`, `music` | bot owner (`ctx.require_owner()` / `level()`) |
+
+**Groups** (`command::Group`): `mod` (alias `moderation`) holds cleanup and the moderation
+commands, `admin` holds addrole/removerole/announce, `music` the voice commands. Each subcommand
+keeps its own level; the group's level is the lowest of them, `needs_level()` makes the bot look
+the caller's level up anyway, and the group checks the subcommand's level itself. `!mod` alone
+lists what the caller may use. Inside a subcommand `ctx.prefix` is `"!mod "`, so usage hints read
+right; `ctx.bot_prefix` is the plain prefix.
 
 Refusals of owner-only commands include the author's ID, so setting up `BOTSU_OWNERS` doesn't need
 developer mode. **Channel arguments** go through `CommandContext::ensure_channel_here`

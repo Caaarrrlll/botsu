@@ -215,12 +215,12 @@ Each level can do everything the ones below it can. `!help` lists only what you 
 !set adminrole add <role>      !set adminrole remove <role>     ← server owner
 !set modrole add <role>        !set modrole remove <role>
 !set roles                     ← who counts as admin and mod here
-!cleanup messages <n>          ← mods: the last n messages (up to 1000)
-!cleanup user <@user> <n>      ← that user's last n messages
-!cleanup bots <n>              ← bot messages and !commands
-!addrole <@user> <role>        ← admins (role by mention, ID or name)
-!removerole <@user> <role>
-!announce <#channel> <text>    ← admins
+!mod cleanup messages <n>          ← mods: the last n messages (up to 1000)
+!mod cleanup user <@user> <n>      ← that user's last n messages
+!mod cleanup bots <n>              ← bot messages and !commands
+!admin addrole <@user> <role>        ← admins (role by mention, ID or name)
+!admin removerole <@user> <role>
+!admin announce <#channel> <text>    ← admins
 ```
 
 The bot needs **Manage Messages** (cleanup) and **Manage Roles** (addrole/removerole), and its
@@ -232,11 +232,11 @@ for the bots already in your servers, add them to the bot's role.
 | Test | Discord | Fluxer |
 |---|---|---|
 | A regular member doesn't see `cleanup`/`addrole`/`set` in `!help` and gets "You need to be …" | | |
-| `!set modrole add <role>`, `!set roles` shows it; a member with that role can `!cleanup` | | |
-| `!cleanup messages 5` deletes 5 messages plus the command; the confirmation vanishes after 5 s | | |
-| `!cleanup user @someone 3`, `!cleanup bots 10` only delete theirs | | |
-| `!addrole @someone <role>` / `!removerole` work; a role above the bot's gives a clear error | | |
-| `!announce #channel hello` posts there; a channel ID from another server is refused | | |
+| `!set modrole add <role>`, `!set roles` shows it; a member with that role can `!mod cleanup` | | |
+| `!mod cleanup messages 5` deletes 5 messages plus the command; the confirmation vanishes after 5 s | | |
+| `!mod cleanup user @someone 3`, `!mod cleanup bots 10` only delete theirs | | |
+| `!admin addrole @someone <role>` / `!admin removerole` work; a role above the bot's gives a clear error | | |
+| `!admin announce #channel hello` posts there; a channel ID from another server is refused | | |
 
 Fluxer's bulk-delete limits and role API are untested; note anything odd.
 
@@ -246,16 +246,16 @@ Fluxer's bulk-delete limits and role API are untested; note anything odd.
 
 ```
 !set modlog <#channel>         ← server owner: where cases are posted (!set modlog off)
-!warn <@user> <reason>         ← mods; the reply pings the user
-!warnings [@user]              ← anyone: your own; mods: anyone's
-!unwarn <case number> [reason]
-!kick <@user> [reason]
-!ban <@user or ID> [0-7] [reason]      ← optional days of their messages to delete
-!tempban <@user> <duration> [reason]   ← 30m, 12h, 3d, 1w, 1d12h …
-!unban <user ID> [reason]
-!timeout <@user> <duration> [reason]   ← up to 28 days
-!untimeout <@user> [reason]
-!case <n>   !cases <@user>   !reason <n> <text>   !bans
+!mod warn <@user> <reason>         ← mods; the reply pings the user
+!mod warnings [@user]              ← anyone: your own; mods: anyone's
+!mod unwarn <case number> [reason]
+!mod kick <@user> [reason]
+!mod ban <@user or ID> [0-7] [reason]      ← optional days of their messages to delete
+!mod tempban <@user> <duration> [reason]   ← 30m, 12h, 3d, 1w, 1d12h …
+!mod unban <user ID> [reason]
+!mod timeout <@user> <duration> [reason]   ← up to 28 days
+!mod untimeout <@user> [reason]
+!mod case <n>   !mod cases <@user>   !mod reason <n> <text>   !mod bans
 ```
 
 The bot needs **Kick Members**, **Ban Members** and **Moderate Members** (Discord: "Timeout
@@ -267,16 +267,16 @@ friend's alt) as the target.
 
 | Test | Discord | Fluxer |
 |---|---|---|
-| `!set modlog #mod-log`; `!warn @test be nice` replies with case #1 and posts it in #mod-log (no ping there) | | |
-| `!warnings` as the test account shows its own warning; `!warnings @someone` is refused for them | | |
-| `!unwarn 1` removes it; `!warnings @test` shows none | | |
-| A mod can't `!kick` an admin, another mod, the owner, the bot, or themselves | | |
-| `!kick @test spam` works; the reason is in the server's audit log | | |
-| `!timeout @test 10m` mutes them; `!untimeout @test` lifts it | | |
-| `!ban <ID> 1 test` bans and deletes a day of their messages; `!bans` lists them; `!unban <ID>` | | |
-| `!tempban @test 2m test` → the ban is lifted about 2 minutes later, with an automatic unban case | | |
-| `!tempban @test 5m`, restart the container, wait: the ban is still lifted on time | | |
-| `!case 2`, `!cases @test`, `!reason 2 new text` (another mod's case: admins only) | | |
+| `!set modlog #mod-log`; `!mod warn @test be nice` replies with case #1 and posts it in #mod-log (no ping there) | | |
+| `!mod warnings` as the test account shows its own warning; `!mod warnings @someone` is refused for them | | |
+| `!mod unwarn 1` removes it; `!mod warnings @test` shows none | | |
+| A mod can't `!mod kick` an admin, another mod, the owner, the bot, or themselves | | |
+| `!mod kick @test spam` works; the reason is in the server's audit log | | |
+| `!mod timeout @test 10m` mutes them; `!mod untimeout @test` lifts it | | |
+| `!mod ban <ID> 1 test` bans and deletes a day of their messages; `!mod bans` lists them; `!mod unban <ID>` | | |
+| `!mod tempban @test 2m test` → the ban is lifted about 2 minutes later, with an automatic unban case | | |
+| `!mod tempban @test 5m`, restart the container, wait: the ban is still lifted on time | | |
+| `!mod case 2`, `!mod cases @test`, `!mod reason 2 new text` (another mod's case: admins only) | | |
 
 Fluxer's moderation endpoints are untested against the instance; note anything odd.
 

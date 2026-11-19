@@ -45,9 +45,9 @@ Phase 0 has no strict order relative to 1: run the spikes early because their an
 Checklist and results in [spikes/README.md](../spikes/README.md); also record results in `CLAUDE.md`.
 
 - [x] **Self-hosted Fluxer on Unraid.** Running; `/.well-known/fluxer` reports `voice_enabled=true`, `self_hosted=true`. Uses ~1 GB RAM; LiveKit on ports 7881 and 7882.
-- [x] **Fluxer bot voice.** Works (2026-11-19). Built into botsu as `!audio` (bot owners): joins the caller's voice channel via LiveKit and plays a test tone. Run it on the deployed container. *If this fails, music on Fluxer is off the table until Fluxer supports it.*
-- [ ] **Discord voice + DAVE.** Same `!audio` command, via songbird 0.6.1 (ships DAVE through its `davey` dependency).
-- [ ] **Voice states:** `!audio join` without a channel needs the platform to tell bots who is in voice. Discord: GUILD_CREATE + VOICE_STATE_UPDATE. Fluxer: GUILD_SYNC / PASSIVE_UPDATES snapshots + VOICE_STATE_UPDATE (fluxer-rust's GUILD_CREATE model drops them).
+- [x] **Fluxer bot voice.** Works (2026-11-19). Built into botsu as `!music` (bot owners): joins the caller's voice channel via LiveKit and plays a test tone. Run it on the deployed container. *If this fails, music on Fluxer is off the table until Fluxer supports it.*
+- [x] **Discord voice + DAVE.** Works (2026-11-19) after enabling symphonia's PCM decoder. Same `!music` command, via songbird 0.6.1 (ships DAVE through its `davey` dependency).
+- [x] **Voice states:** `!music join` without a channel (works on both, 2026-11-19) needs the platform to tell bots who is in voice. Discord: GUILD_CREATE + VOICE_STATE_UPDATE. Fluxer: GUILD_SYNC / PASSIVE_UPDATES snapshots + VOICE_STATE_UPDATE (fluxer-rust's GUILD_CREATE model drops them).
 - [ ] **Fluxer API coverage.** Bulk delete, bans, member timeouts (`communication_disabled_until`) and role edits against the real instance: folded into phase 4, which uses them.
 - [x] **Multi-arch libwebrtc.** webrtc-sys-build maps `aarch64` to a prebuilt `linux-arm64` libwebrtc, so an arm64 image is possible with a native arm64 runner. Not needed for Unraid.
 

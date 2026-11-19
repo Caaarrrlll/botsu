@@ -44,9 +44,12 @@ impl Bot {
     }
 
     pub fn register(&mut self, command: impl Command + 'static) {
-        let name = command.name();
-        if self.commands.insert(name, Arc::new(command)).is_some() {
-            tracing::warn!(command = name, "command registered twice; last one wins");
+        let command: Arc<dyn Command> = Arc::new(command);
+        let names = std::iter::once(command.name()).chain(command.aliases().iter().copied());
+        for name in names.collect::<Vec<_>>() {
+            if self.commands.insert(name, command.clone()).is_some() {
+                tracing::warn!(command = name, "command registered twice; last one wins");
+            }
         }
     }
 
@@ -113,7 +116,7 @@ impl Bot {
         tracing::debug!(%platform, command = %name, user = %message.author.id, "running command");
 
         // Only look the level up (a few API calls) when the command needs it.
-        let level = if cmd.level() > Level::Everyone {
+        let level = if cmd.level() > Level::Everyone || cmd.needs_level() {
             let level = self.level_of(&*chat, &message).await;
             if level < cmd.level() {
                 let text = format!(
@@ -136,6 +139,7 @@ impl Bot {
             chat: chat.clone(),
             is_owner,
             prefix: self.prefix.clone(),
+            bot_prefix: self.prefix.clone(),
             level,
             message,
             args,
@@ -156,7 +160,11 @@ impl Bot {
     fn help_text(&self, level: Level) -> String {
         let mut out = String::from("Commands:\n");
         out.push_str(&format!("`{}help`: show this list\n", self.prefix));
-        for cmd in self.commands.values().filter(|c| c.level() <= level) {
+        for (_, cmd) in self
+            .commands
+            .iter()
+            .filter(|(name, c)| **name == c.name() && c.level() <= level)
+        {
             out.push_str(&format!(
                 "`{}{}`: {}\n",
                 self.prefix,

@@ -23,10 +23,10 @@ use time::OffsetDateTime;
 
 use crate::adapter::{ChatAdapter, Platform};
 use crate::bot::Bot;
-use crate::command::{Command, CommandContext};
+use crate::command::{Command, CommandContext, Group};
 use crate::error::{Error, Result};
 use crate::permissions::{Level, Permissions};
-use crate::server::{guild, parse_user};
+use crate::server::{guild, parse_user, CleanupCommand};
 use crate::storage::{now, Case, NewCase, ScheduledUnban, Store};
 
 /// `guild_settings` key for the mod-log channel.
@@ -428,6 +428,27 @@ pub fn spawn_unban_scheduler(bot: Arc<Bot>, tools: Arc<ModTools>) -> tokio::task
             tools.lift_due_bans(&bot).await;
         }
     })
+}
+
+/// `mod <command>`: cleanup and every moderation command (alias `moderation`).
+pub fn group(tools: &Arc<ModTools>) -> Group {
+    let mut group = Group::new(
+        "mod",
+        "Moderation",
+        "Moderation: cleanup, warn, kick, ban, timeout, cases, … (mods; warnings: anyone).",
+    )
+    .alias("moderation")
+    .with(CleanupCommand)
+    .with(CaseCommand(tools.clone()))
+    .with(CasesCommand(tools.clone()))
+    .with(ReasonCommand(tools.clone()))
+    .with(WarningsCommand(tools.clone()))
+    .with(UnwarnCommand(tools.clone()))
+    .with(BansCommand(tools.clone()));
+    for command in ModCommand::all(tools) {
+        group = group.with(command);
+    }
+    group
 }
 
 // --- warn / kick / ban / tempban / unban / timeout / untimeout ------------------------------------
@@ -1090,12 +1111,7 @@ mod tests {
         let tools = ModTools::new(store.clone(), perms.clone());
         let mut bot = Bot::new("!", Vec::<String>::new());
         bot.set_permissions(perms);
-        for c in ModCommand::all(&tools) {
-            bot.register(c);
-        }
-        bot.register(WarningsCommand(tools.clone()));
-        bot.register(UnwarnCommand(tools.clone()));
-        bot.register(ReasonCommand(tools.clone()));
+        bot.register(group(&tools));
         let chat = Arc::new(FakeChat::default());
         let bot = Arc::new(bot);
         bot.register_chat(chat.clone());
@@ -1130,28 +1146,28 @@ mod tests {
     async fn hierarchy() {
         let s = setup();
         assert!(s
-            .say("30", "!kick 10")
+            .say("30", "!mod kick 10")
             .await
             .contains("You need to be a mod"));
-        let r = s.say("10", "!kick 10").await;
+        let r = s.say("10", "!mod kick 10").await;
         assert!(r.contains("yourself"), "{r}");
-        assert!(s.say("10", "!kick 2").await.contains("myself"));
-        assert!(s.say("10", "!kick 1").await.contains("server owner"));
-        assert!(s.say("10", "!kick 20").await.contains("an admin"));
+        assert!(s.say("10", "!mod kick 2").await.contains("myself"));
+        assert!(s.say("10", "!mod kick 1").await.contains("server owner"));
+        assert!(s.say("10", "!mod kick 20").await.contains("an admin"));
         assert!(
-            s.say("10", "!kick 11").await.contains("They're a mod"),
+            s.say("10", "!mod kick 11").await.contains("They're a mod"),
             "same level"
         );
         assert!(s.chat.actions().is_empty());
 
         assert!(s
-            .say("20", "!kick 10 spam")
+            .say("20", "!mod kick 10 spam")
             .await
             .contains("Kicked **name-10**"));
-        assert!(s.say("1", "!kick 20").await.contains("Kicked"));
+        assert!(s.say("1", "!mod kick 20").await.contains("Kicked"));
         assert_eq!(s.chat.actions(), ["kick 10", "kick 20"]);
         // Banning someone who isn't a member works (no rank to compare).
-        assert!(s.say("10", "!ban 40 7 raid").await.contains("Banned"));
+        assert!(s.say("10", "!mod ban 40 7 raid").await.contains("Banned"));
         assert_eq!(s.chat.actions()[2], "ban 40 7");
     }
 
@@ -1159,10 +1175,10 @@ mod tests {
     async fn warnings_cases_and_modlog() {
         let s = setup();
         assert!(
-            s.say("10", "!warn 30").await.contains("Usage"),
+            s.say("10", "!mod warn 30").await.contains("Usage"),
             "reason required"
         );
-        let reply = s.say("10", "!warn 30 be nice").await;
+        let reply = s.say("10", "!mod warn 30 be nice").await;
         assert!(
             reply.contains("<@30>") && reply.contains("case #1, warning 1"),
             "{reply}"
@@ -1174,25 +1190,31 @@ mod tests {
         );
         assert!(!log.contains("<@"), "mod-log posts don't ping");
 
-        s.say("10", "!warn 30 again").await;
-        assert!(s.say("30", "!warnings").await.contains("2 warning(s)"));
+        s.say("10", "!mod warn 30 again").await;
+        assert!(s.say("30", "!mod warnings").await.contains("2 warning(s)"));
         assert!(s
-            .say("30", "!warnings 10")
+            .say("30", "!mod warnings 10")
             .await
             .contains("only see your own"));
         assert!(s
-            .say("10", "!unwarn 1")
+            .say("10", "!mod unwarn 1")
             .await
             .contains("Removed warning #1"));
-        assert!(s.say("10", "!unwarn 1").await.contains("isn't a warning"));
-        assert!(s.say("10", "!warnings 30").await.contains("1 warning(s)"));
+        assert!(s
+            .say("10", "!mod unwarn 1")
+            .await
+            .contains("isn't a warning"));
+        assert!(s
+            .say("10", "!mod warnings 30")
+            .await
+            .contains("1 warning(s)"));
 
         assert!(s
-            .say("11", "!reason 2 typo")
+            .say("11", "!mod reason 2 typo")
             .await
             .contains("moderator or an admin"));
         assert!(s
-            .say("10", "!reason 2 spamming links")
+            .say("10", "!mod reason 2 spamming links")
             .await
             .contains("Updated"));
         let case = s.store.case(Platform::Fluxer, "g", 2).unwrap().unwrap();
@@ -1202,12 +1224,12 @@ mod tests {
     #[tokio::test]
     async fn tempban_is_lifted_when_due() {
         let s = setup();
-        assert!(s.say("10", "!tempban 30 10").await.contains("Usage"));
+        assert!(s.say("10", "!mod tempban 30 10").await.contains("Usage"));
         assert!(s
-            .say("10", "!tempban 30 30s")
+            .say("10", "!mod tempban 30 30s")
             .await
             .contains("between 1 minute"));
-        let reply = s.say("10", "!tempban 30 2h flooding").await;
+        let reply = s.say("10", "!mod tempban 30 2h flooding").await;
         assert!(reply.contains("for 2h, until"), "{reply}");
         let at = s
             .store
@@ -1235,7 +1257,7 @@ mod tests {
         assert!(s.chat.last_sent("log").contains("botsu (automatic)"));
 
         // Unbanned by hand before it was due: the schedule is dropped quietly.
-        s.say("10", "!tempban 30 1d").await;
+        s.say("10", "!mod tempban 30 1d").await;
         s.chat.banned.lock().unwrap().clear();
         s.store
             .schedule_unban(Platform::Fluxer, "g", "30", now() - 1, 3)
@@ -1244,8 +1266,8 @@ mod tests {
         assert!(s.store.due_unbans(now()).unwrap().is_empty());
 
         // A permanent ban replaces a temp-ban.
-        s.say("10", "!tempban 30 1d").await;
-        s.say("10", "!ban 30").await;
+        s.say("10", "!mod tempban 30 1d").await;
+        s.say("10", "!mod ban 30").await;
         assert_eq!(
             s.store
                 .scheduled_unban(Platform::Fluxer, "g", "30")
@@ -1258,11 +1280,41 @@ mod tests {
     async fn timeouts() {
         let s = setup();
         assert!(s
-            .say("10", "!timeout 30 29d")
+            .say("10", "!mod timeout 30 29d")
             .await
             .contains("between 1 minute and 4w"));
-        assert!(s.say("10", "!timeout 30 10m").await.contains("Timed out"));
-        assert!(s.say("10", "!untimeout 30").await.contains("Ended"));
+        assert!(s
+            .say("10", "!mod timeout 30 10m")
+            .await
+            .contains("Timed out"));
+        assert!(s.say("10", "!mod untimeout 30").await.contains("Ended"));
         assert_eq!(s.chat.actions(), ["timeout 30 true", "timeout 30 false"]);
+    }
+
+    #[tokio::test]
+    async fn grouped_under_mod() {
+        let s = setup();
+        let member = s.say("30", "!mod").await;
+        assert!(member.contains("`!mod warnings`"), "{member}");
+        assert!(
+            !member.contains("`!mod ban`"),
+            "only what they may use: {member}"
+        );
+        let moderator = s.say("10", "!moderation").await;
+        assert!(moderator.contains("`!mod ban`") && moderator.contains("`!mod cleanup`"));
+
+        let help = s.say("30", "!help").await;
+        assert_eq!(help.matches("`!mod`").count(), 1, "{help}");
+        assert!(
+            !help.contains("moderation`"),
+            "aliases aren't listed: {help}"
+        );
+
+        assert!(s
+            .say("30", "!mod ban 10")
+            .await
+            .contains("You need to be a mod to use `!mod ban`"));
+        assert!(s.say("10", "!mod nope").await.contains("no `nope`"));
+        assert!(s.say("10", "!mod ban").await.contains("Usage: `!mod ban"));
     }
 }
