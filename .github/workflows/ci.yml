@@ -20,7 +20,7 @@ jobs:
     name: fmt, clippy, test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Build deps for libwebrtc (pulled in by fluxer-rust via livekit).
       - name: System packages
@@ -58,7 +58,7 @@ jobs:
         if: env.PUBLISH != 'true'
         run: echo "::notice::DOCKERHUB_TOKEN secret not set; skipping image publish."
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: env.PUBLISH == 'true'
 
       - uses: docker/setup-buildx-action@v3
