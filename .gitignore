@@ -1,0 +1,33 @@
+# Build output. Cargo.lock IS committed (binary crate; pins livekit/libwebrtc).
+/target
+
+# Secrets: any env file except the template.
+.env
+.env.*
+*.env
+!.env.example
+
+# Local runtime data (SQLite database, yt-dlp cache, cookies).
+/data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+cookies.txt
+
+# Third-party code copied in for phase 0 spikes (see spikes/README.md).
+/spikes/fluxer-voice/
+
+# Editors and OS.
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Claude Code per-user settings (shared .claude/settings.json is fine to commit).
+.claude/settings.local.json
+
+# Logs.
+*.log

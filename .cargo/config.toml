@@ -1,0 +1,4 @@
+# libwebrtc (via livekit, via fluxer-rust) is prebuilt with the static MSVC
+# runtime; without this, Windows builds fail to link (LNK2038 RuntimeLibrary).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

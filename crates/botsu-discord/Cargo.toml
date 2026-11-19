@@ -1,0 +1,13 @@
+[package]
+name = "botsu-discord"
+description = "Discord chat (and later songbird voice) adapter for botsu."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+botsu-core.workspace = true
+serenity.workspace = true
+tokio.workspace = true
+tracing.workspace = true
