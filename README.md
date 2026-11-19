@@ -13,7 +13,7 @@ tables, alert rules, extending): [docs/architecture.md](docs/architecture.md). B
 | 0. Spikes (voice on Fluxer, Discord DAVE) | open, see [spikes/](spikes/README.md) |
 | 1. Skeleton on Discord + Fluxer | `!ping` works on both; Docker image still to verify |
 | 2. Alerts (YouTube uploads, Twitch live) | code done; live test pending |
-| 3. CI/CD (GitHub Actions → Docker Hub) and install guides | |
+| 3. CI/CD (GitHub Actions → Docker Hub) and install guides | done once the Docker Hub token secret is set |
 | 4. Server tools (permissions, cleanup, admin) | |
 | 5. Moderation (cases, temp-bans, warnings) | |
 | 6. Music (yt-dlp + ffmpeg → Discord voice / LiveKit) | |
@@ -53,8 +53,10 @@ Getting tokens and testing against live servers: [docs/testing.md](docs/testing.
 
 ## Docker / Unraid
 
-Image: `caaarrrlll/botsu:latest` on Docker Hub (published often during development).
-Unraid step by step, with a template: [docs/install-unraid.md](docs/install-unraid.md).
+Image: `caaarrrlll/botsu:latest` on Docker Hub, built and published by GitHub Actions on every push
+to `master` once the checks pass (`sha-<commit>` tags too, for rollbacks).
+Guides: [Unraid](docs/install-unraid.md) (template) · [any Docker host](docs/install-docker.md)
+(`docker run` / Compose) · [native Linux](docs/install-linux.md) (systemd, no containers).
 
 Any Docker host:
 

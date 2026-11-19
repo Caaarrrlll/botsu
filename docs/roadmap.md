@@ -91,27 +91,28 @@ The easiest cross-platform feature: "post a message in channel X". Replaces Red'
 Get the project building and publishing itself before the bigger features land.
 
 ### GitHub
-- [ ] Create the GitHub repository; push `master`.
-- [ ] **CI workflow (every push and PR):** `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`. Cache cargo and the libwebrtc download (it's large).
-- [ ] Branch protection on `master`: CI must pass.
-- [ ] Dependabot or Renovate for Cargo and GitHub Actions. Keep `fluxer-rust` and the `livekit` / `webrtc-sys` pins **out** of automatic bumps: they broke the build on day one and need a manual check.
+- [x] Create the GitHub repository; push `master`.
+- [x] **CI workflow** (`.github/workflows/ci.yml`, every push and PR): `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test`. `Swatinem/rust-cache` caches cargo and the libwebrtc download.
+- [ ] Branch protection on `master`: CI must pass. Skipped for now: with one developer pushing straight to `master` it only adds friction. Revisit if others contribute.
+- [x] Dependabot (`.github/dependabot.yml`): weekly Cargo (minor/patch grouped), GitHub Actions and Docker base images. `fluxer-rust`, `livekit*`, `webrtc-sys*` and `libwebrtc` are ignored and bumped by hand.
 
 ### Docker Hub
-- [ ] Create the Docker Hub repository and an access token with read/write scope.
-- [ ] GitHub secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
-- [ ] **Release workflow on push to `master`:** `docker/setup-buildx-action`, `docker/login-action`, `docker/metadata-action`, `docker/build-push-action` with GitHub Actions layer cache. Tags: `latest` and `sha-<short>`. On git tags `v*`, also `X.Y.Z` and `X.Y`.
-- [ ] `linux/amd64` always. `linux/arm64` only if phase 0 found a prebuilt libwebrtc, built on a native arm64 runner (emulated builds of webrtc would be very slow).
-- [ ] OCI labels (source, version, revision) so Docker Hub and Unraid link back to the repo.
-- [ ] Sync the README to the Docker Hub description.
+- [x] Docker Hub repository `caaarrrlll/botsu` (public; created by the first manual push on 2026-11-19).
+- [ ] **User:** Docker Hub access token (Read & Write) stored as the GitHub secret `DOCKERHUB_TOKEN`. The username is in the workflow.
+- [x] **Release job** in the same workflow, after the checks pass, only on `master` and `v*` tags: buildx + metadata + build-push with the GitHub Actions layer cache. Tags: `latest` and `sha-<short>` on `master`; `X.Y.Z` and `X.Y` on tags `vX.Y.Z`.
+- [x] `linux/amd64`. `linux/arm64` only if phase 0 finds a prebuilt libwebrtc, built on a native arm64 runner (emulated webrtc builds would be very slow).
+- [x] OCI labels (source, revision, version) via `docker/metadata-action`, so Docker Hub and Unraid link back to the repo.
+- [ ] Sync the README to the Docker Hub description (needs a token with admin scope; optional).
+- [ ] Faster image builds: the Dockerfile's cargo cache mount isn't kept between CI runs, so each image build compiles from scratch (~10–15 min). Fix with `cargo-chef` layers if it gets annoying.
 
 ### Running it anywhere
-- [ ] `deploy/docker-compose.yml`: image from Docker Hub, `env_file`, `/data` volume, `restart: unless-stopped`.
-- [x] `deploy/unraid/my-botsu.xml`: pulls `caaarrrlll/botsu:latest`; data folder + PUID/PGID only, settings file auto-created in appdata. Icon is a placeholder (`assets/monkasS.png`).
+- [x] `deploy/docker-compose.yml`: image from Docker Hub, `./data` volume, PUID/PGID, optional `env_file`, `restart: unless-stopped`.
+- [x] `deploy/unraid/my-botsu.xml`: pulls `caaarrrlll/botsu:latest`; data folder, settings as fields (tokens masked) or in the auto-created `botsu.env`, PUID/PGID. Icon is a placeholder (`assets/monkasS.png`).
 - [ ] Later (user): the template on the live server still has the old "Bot owners" description (says owners add/remove alerts, suggests `!tube add x` for the ID). Cosmetic. Refresh by re-downloading only while all fields are blank; Unraid saves field values into the same file, so re-downloading would wipe them. Otherwise edit the line by hand.
-- [ ] `docs/install-docker.md`: plain `docker run` and Compose instructions for anyone.
-- [ ] **Log invite links at startup** (terminal and `docker logs`), one per connected platform, so whoever spins the bot up can add it to servers right away. No extra config needed: Discord's application ID comes from the Ready event (`ready.application.id`); on Fluxer the bot user ID *is* the application ID (seen in the token check), and the host comes from discovery. Permissions value grows with later phases (one constant per phase's needs). Then `*_APPLICATION_ID` in `.env.example` can be dropped.
-- [ ] `docs/install-linux.md`: native install without containers: download or `cargo build --release`, a `botsu` system user, `/etc/botsu/botsu.env` (mode 600), `/var/lib/botsu` as the data directory, and a hardened systemd unit (`deploy/systemd/botsu.service`). Phase 6 adds the ffmpeg and yt-dlp steps.
-- [ ] Decide whether GitHub Releases should also carry a prebuilt Linux binary for the native guide (static linking is tricky with libwebrtc; a glibc build for Debian/Ubuntu is fine).
+- [x] `docs/install-docker.md`: `docker run` and Compose for anyone, tags, settings, updating and rolling back.
+- [x] **Invite links in the startup log**, one per connected platform: Discord from `ready.application.id`, Fluxer from the bot's user ID plus the discovered web app address. Permissions in `botsu_core::INVITE_PERMISSIONS` (now including Embed Links for alert previews). `*_APPLICATION_ID` in `.env.example` are kept as optional, unused reference values.
+- [x] `docs/install-linux.md` + `deploy/systemd/botsu.service`: build from source, `/etc/botsu/botsu.env` (600), `DynamicUser` + `StateDirectory` (`/var/lib/botsu`), hardened sandbox (`systemd-analyze security`: 3.2 OK). Phase 6 adds ffmpeg and yt-dlp.
+- [ ] Decide whether GitHub Releases should also carry a prebuilt Linux binary for the native guide (a glibc build for Debian/Ubuntu is fine; static linking is tricky with libwebrtc).
 
 **Done when:** pushing to `master` publishes a new image to Docker Hub, and Unraid can update to it through the template.
 

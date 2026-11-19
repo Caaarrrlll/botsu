@@ -15,10 +15,11 @@ Until phase 3 publishes an image to Docker Hub, the quickest way is to run from 
    **Application ID** from the **General Information** page:
 
    ```
-   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot&permissions=68608
+   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot&permissions=84992
    ```
 
-   `68608` = View Channels + Send Messages + Read Message History, enough for phase 1.
+   `84992` = View Channels + Send Messages + Embed Links (for alert link previews) + Read Message
+   History. Once the bot is connected, its log prints this link with the right ID filled in.
    Later phases need more (Manage Messages, Manage Roles, Kick, Ban, Moderate Members, Connect,
    Speak); re-invite with a new link then.
 
@@ -45,12 +46,12 @@ Switch back to `$` only at cutover (roadmap phase 7), once botsu is definitely r
    the token before the `.`):
 
    ```
-   https://fluxer.example.com/oauth2/authorize?client_id=APP_ID&scope=bot&permissions=68608
+   https://fluxer.example.com/oauth2/authorize?client_id=APP_ID&scope=bot&permissions=84992
    ```
 
    Open it while logged in, pick the community and approve. You need Manage Community (Manage
    Guild) or Administrator there. With non-zero `permissions`, Fluxer creates a role named after
-   the bot. `68608` is View Channels + Send Messages + Read Message History *if* Fluxer uses
+   the bot. `84992` is View Channels + Send Messages + Embed Links + Read Message History *if* Fluxer uses
    Discord's permission numbers (it aims to be compatible); if the role looks wrong, use
    `permissions=0` and allow the bot in the channel's permission settings instead.
    If the bot is private, only its owner can add it.

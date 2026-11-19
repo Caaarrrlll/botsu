@@ -34,7 +34,8 @@ schema, adapter trait or alert rules change.
   bot owners only (`ctx.require_owner()`, `BOTSU_OWNERS`). Phase 4 adds roles.
 - Config: env vars first, then `<data dir>/botsu.env` (auto-created on first start; bot waits for a token).
   Docker entrypoint fixes `/data` ownership and drops to PUID:PGID (99:100). Image: `caaarrrlll/botsu:latest`,
-  pushed by hand from this PC during development (user is fine publishing often).
+  published by .github/workflows/ci.yml on push to master (secret DOCKERHUB_TOKEN). Don't push images by
+  hand any more unless CI is broken. User is fine publishing often.
 - Network test: `cargo test -p botsu-core -- --ignored` (hits real YouTube).
 
 ## Current phase

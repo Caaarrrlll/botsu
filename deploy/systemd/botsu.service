@@ -1,0 +1,45 @@
+# systemd unit for running botsu natively. Install: docs/install-linux.md
+[Unit]
+Description=botsu chat bot (Discord / Fluxer)
+Documentation=https://github.com/Caaarrrlll/botsu
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/botsu
+# Settings: this file (root-only) and/or /var/lib/botsu/botsu.env. This file wins.
+EnvironmentFile=-/etc/botsu/botsu.env
+Environment=BOTSU_DATA_DIR=/var/lib/botsu
+Restart=on-failure
+RestartSec=10s
+
+# A throwaway user per run, owning /var/lib/botsu (created by systemd).
+DynamicUser=yes
+StateDirectory=botsu
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/botsu
+
+# Hardening: the bot only needs outgoing network access and its state directory.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
