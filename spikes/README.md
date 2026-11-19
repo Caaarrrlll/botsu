@@ -10,7 +10,7 @@ in the table below and in CLAUDE.md.
 | Does each platform tell bots who is in which voice channel? | `!audio where` and `!audio join` without a channel | _not yet run_ |
 | Fluxer moderation APIs (bulk delete, bans, timeouts, roles) | Tested live during phase 4 | folded into phase 4 |
 | arm64 image possible? | webrtc-sys-build maps `aarch64` → prebuilt `linux-arm64` libwebrtc | yes, needs a native arm64 runner; not needed for Unraid |
-| Self-hosted Fluxer RAM, ports | `docker stats --no-stream` on Unraid | _not yet measured_ |
+| Self-hosted Fluxer RAM, ports | `docker stats --no-stream` on Unraid | ~1 GB RAM (2026-11-19); LiveKit ports 7881 and 7882 forwarded |
 
 ## Voice test
 

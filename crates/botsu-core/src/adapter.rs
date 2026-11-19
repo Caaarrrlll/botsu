@@ -37,6 +37,29 @@ pub struct Author {
     pub is_bot: bool,
 }
 
+/// The Administrator permission bit. Discord and Fluxer use the same permission bit layout.
+pub const ADMINISTRATOR: u64 = 1 << 3;
+
+/// A server role.
+#[derive(Debug, Clone)]
+pub struct RoleInfo {
+    pub id: String,
+    pub name: String,
+    /// Permission bits (Discord layout).
+    pub permissions: u64,
+}
+
+/// A message from a channel's history (for cleanup).
+#[derive(Debug, Clone)]
+pub struct HistoryMessage {
+    pub id: String,
+    pub author_id: String,
+    pub author_is_bot: bool,
+    pub content: String,
+    /// Unix seconds; 0 if the platform didn't say.
+    pub timestamp: i64,
+}
+
 /// A chat message, already translated out of the platform's types.
 /// IDs are strings: every platform we target uses string snowflakes or ULIDs.
 #[derive(Debug, Clone)]
@@ -72,6 +95,64 @@ pub trait ChatAdapter: Send + Sync {
     }
 
     /// The user ID of a server's owner, for "server owner may do this" permission checks.
+    /// The server a channel belongs to (None for DMs). Used to refuse channel IDs from other
+    /// servers the bot is in.
+    async fn channel_guild(&self, channel_id: &str) -> Result<Option<String>> {
+        let _ = channel_id;
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "channel_guild",
+        })
+    }
+
+    /// Role IDs of a server member.
+    async fn member_roles(&self, guild_id: &str, user_id: &str) -> Result<Vec<String>> {
+        let _ = (guild_id, user_id);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "member_roles",
+        })
+    }
+
+    /// All roles of a server.
+    async fn roles(&self, guild_id: &str) -> Result<Vec<RoleInfo>> {
+        let _ = guild_id;
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "roles",
+        })
+    }
+
+    async fn add_role(&self, guild_id: &str, user_id: &str, role_id: &str) -> Result<()> {
+        let _ = (guild_id, user_id, role_id);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "add_role",
+        })
+    }
+
+    async fn remove_role(&self, guild_id: &str, user_id: &str, role_id: &str) -> Result<()> {
+        let _ = (guild_id, user_id, role_id);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "remove_role",
+        })
+    }
+
+    /// Up to `limit` (≤ 100) messages before `before` (or the newest), newest first.
+    async fn recent_messages(
+        &self,
+        channel_id: &str,
+        before: Option<&str>,
+        limit: u8,
+    ) -> Result<Vec<HistoryMessage>> {
+        let _ = (channel_id, before, limit);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "recent_messages",
+        })
+    }
+
     async fn guild_owner(&self, guild_id: &str) -> Result<Option<String>> {
         let _ = guild_id;
         Err(Error::Unsupported {

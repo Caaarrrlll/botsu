@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use botsu_core::alerts::{self, twitch::Twitch, youtube::YouTubeApi, TubeCommand, TwitchCommand};
+use botsu_core::permissions::Permissions;
+use botsu_core::server::{AnnounceCommand, CleanupCommand, RoleCommand, SetCommand};
 use botsu_core::storage::Store;
 use botsu_core::voice::{AudioCommand, VoiceAdapter};
 use botsu_core::Bot;
@@ -75,6 +77,12 @@ async fn main() -> Result<()> {
     };
 
     let mut bot = Bot::new(config.prefix.clone(), config.owners);
+    bot.set_permissions(Arc::new(Permissions::new(store.clone())));
+    bot.register(SetCommand::new(store.clone()));
+    bot.register(CleanupCommand);
+    bot.register(RoleCommand::add());
+    bot.register(RoleCommand::remove());
+    bot.register(AnnounceCommand);
     if !bot.has_owners() {
         tracing::warn!("BOTSU_OWNERS is empty: nobody can run tube/twitch import or tube shorts. Run one to see your user ID.");
     }

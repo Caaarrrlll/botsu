@@ -53,6 +53,14 @@ const MIGRATIONS: &[&str] = &[
         added_at    INTEGER NOT NULL,
         PRIMARY KEY (kind, item_id)
     );",
+    // 3: per-server admin and mod roles (permissions)
+    "CREATE TABLE guild_roles (
+        platform TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        level    TEXT NOT NULL,         -- 'admin' | 'mod'
+        role_id  TEXT NOT NULL,
+        PRIMARY KEY (platform, guild_id, level, role_id)
+    );",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -327,6 +335,54 @@ impl Store {
                 url: r.get(4)?,
                 added_at: r.get(5)?,
             })
+        })?;
+        rows.collect()
+    }
+
+    /// Marks a role as granting `level` ("admin" or "mod") in a server. False if it already did.
+    pub fn add_guild_role(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        level: &str,
+        role_id: &str,
+    ) -> DbResult<bool> {
+        let n = self.conn().execute(
+            "INSERT OR IGNORE INTO guild_roles (platform, guild_id, level, role_id)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![platform_str(platform), guild_id, level, role_id],
+        )?;
+        Ok(n > 0)
+    }
+
+    pub fn remove_guild_role(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        level: &str,
+        role_id: &str,
+    ) -> DbResult<bool> {
+        let n = self.conn().execute(
+            "DELETE FROM guild_roles
+             WHERE platform = ?1 AND guild_id = ?2 AND level = ?3 AND role_id = ?4",
+            params![platform_str(platform), guild_id, level, role_id],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// `(level, role_id)` pairs configured for a server.
+    pub fn guild_roles(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+    ) -> DbResult<Vec<(String, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT level, role_id FROM guild_roles
+             WHERE platform = ?1 AND guild_id = ?2 ORDER BY level, role_id",
+        )?;
+        let rows = stmt.query_map(params![platform_str(platform), guild_id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
         })?;
         rows.collect()
     }

@@ -8,12 +8,17 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use botsu_core::voice::VoiceAdapter;
-use botsu_core::{Author, Bot, Capabilities, ChatAdapter, Error, IncomingMessage, Platform};
+use botsu_core::{
+    Author, Bot, Capabilities, ChatAdapter, Error, HistoryMessage, IncomingMessage, Platform,
+    RoleInfo,
+};
 use fluxer::http::Http;
 use fluxer::prelude::{
-    Client, Context, EventHandler, FluxerVoiceConnection, GuildSync, Message, PassiveUpdates,
-    Ready, VoiceStateUpdate,
+    Client, Context, EventHandler, FluxerVoiceConnection, GetMessagesQuery, GuildSync, Message,
+    PassiveUpdates, Ready, VoiceStateUpdate,
 };
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 use tokio::task::AbortHandle;
 
 /// Public instance used when neither `FLUXER_URL` nor `FLUXER_API_URL` is set. Its API
@@ -78,6 +83,95 @@ impl ChatAdapter for FluxerChat {
             .await
             .map_err(err)?;
         Ok(msg.id)
+    }
+
+    async fn channel_guild(&self, channel_id: &str) -> botsu_core::Result<Option<String>> {
+        let channel = self.http.get_channel(channel_id).await.map_err(err)?;
+        Ok(channel.guild_id)
+    }
+
+    async fn member_roles(&self, guild_id: &str, user_id: &str) -> botsu_core::Result<Vec<String>> {
+        let member = self
+            .http
+            .get_guild_member(guild_id, user_id)
+            .await
+            .map_err(err)?;
+        Ok(member.roles)
+    }
+
+    async fn roles(&self, guild_id: &str) -> botsu_core::Result<Vec<RoleInfo>> {
+        let roles = self.http.get_guild_roles(guild_id).await.map_err(err)?;
+        Ok(roles
+            .into_iter()
+            .map(|r| RoleInfo {
+                // Fluxer sends permission bits as a decimal string, like Discord.
+                permissions: r
+                    .permissions
+                    .as_deref()
+                    .and_then(|p| p.parse().ok())
+                    .unwrap_or(0),
+                id: r.id,
+                name: r.name,
+            })
+            .collect())
+    }
+
+    async fn add_role(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        role_id: &str,
+    ) -> botsu_core::Result<()> {
+        self.http
+            .add_member_role(guild_id, user_id, role_id)
+            .await
+            .map_err(err)
+    }
+
+    async fn remove_role(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        role_id: &str,
+    ) -> botsu_core::Result<()> {
+        self.http
+            .remove_member_role(guild_id, user_id, role_id)
+            .await
+            .map_err(err)
+    }
+
+    async fn recent_messages(
+        &self,
+        channel_id: &str,
+        before: Option<&str>,
+        limit: u8,
+    ) -> botsu_core::Result<Vec<HistoryMessage>> {
+        let query = GetMessagesQuery {
+            limit: Some(limit.min(100)),
+            before: before.map(str::to_owned),
+            after: None,
+            around: None,
+        };
+        let messages = self
+            .http
+            .get_messages(channel_id, query)
+            .await
+            .map_err(err)?;
+        Ok(messages
+            .into_iter()
+            .map(|m| HistoryMessage {
+                timestamp: m
+                    .timestamp
+                    .as_deref()
+                    .and_then(|t| OffsetDateTime::parse(t, &Rfc3339).ok())
+                    .map(|t| t.unix_timestamp())
+                    .unwrap_or(0),
+                author_id: m.author.id,
+                author_is_bot: m.author.bot.unwrap_or(false),
+                content: m.content.unwrap_or_default(),
+                id: m.id,
+            })
+            .collect())
     }
 
     async fn guild_owner(&self, guild_id: &str) -> botsu_core::Result<Option<String>> {

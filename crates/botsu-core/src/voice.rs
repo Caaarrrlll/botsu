@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use crate::adapter::Platform;
 use crate::command::{Command, CommandContext};
 use crate::error::{Error, Result};
+use crate::permissions::Level;
 
 /// What the core needs from a platform's voice support. All IDs are strings, as elsewhere.
 #[async_trait]
@@ -143,6 +144,10 @@ impl Command for AudioCommand {
 
     fn help(&self) -> &'static str {
         "Audio test: join, play, stop, leave, where (bot owners)."
+    }
+
+    fn level(&self) -> Level {
+        Level::BotOwner
     }
 
     async fn run(&self, ctx: CommandContext) -> Result<()> {

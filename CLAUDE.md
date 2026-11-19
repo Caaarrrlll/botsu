@@ -30,7 +30,9 @@ schema, adapter trait or alert rules change.
 - `botsu-core/src/alerts/`: `youtube.rs` (RSS feed for detection + Data API for handles and live state; no page scraping, by user preference), `twitch.rs` (Helix, app
   token), `mod.rs` (pollers, dedup rules, delivery), `commands.rs` (`tube`, `twitch`).
 - Adapters call `bot.register_chat(..)` once connected so pollers can post; `bot.chat(platform)`.
-- Alert permissions (user decision, deliberately lax): add/list/remove anyone; import and tube shorts
+- Permissions (phase 4): bot owner > server owner > admin > mod > everyone; `Command::level()`, checked in
+  `Bot::handle_message`; details in docs/architecture.md. Alert commands (user decision, lax): add/list/remove
+  anyone; import and tube shorts
   bot owners only (`ctx.require_owner()`, `BOTSU_OWNERS`). Phase 4 adds roles.
 - Config: env vars first, then `<data dir>/botsu.env` (auto-created on first start; bot waits for a token).
   Docker entrypoint fixes `/data` ownership and drops to PUID:PGID (99:100). Image: `caaarrrlll/botsu:latest`,

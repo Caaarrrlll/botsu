@@ -7,10 +7,13 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
 use botsu_core::voice::VoiceAdapter;
-use botsu_core::{Author, Bot, Capabilities, ChatAdapter, Error, IncomingMessage, Platform};
+use botsu_core::{
+    Author, Bot, Capabilities, ChatAdapter, Error, HistoryMessage, IncomingMessage, Platform,
+    RoleInfo,
+};
 use serenity::all::{
-    ChannelId, Client, Context, EventHandler, GatewayIntents, Guild, GuildId, Http, Message,
-    MessageId, Ready, UserId, VoiceState,
+    ChannelId, Client, Context, EventHandler, GatewayIntents, GetMessages, Guild, GuildId, Http,
+    Message, MessageId, Ready, RoleId, UserId, VoiceState,
 };
 use serenity::async_trait;
 use songbird::input::core::io::ReadOnlySource;
@@ -75,6 +78,97 @@ impl ChatAdapter for DiscordChat {
             .delete_message(&self.http, MessageId::new(snowflake(message_id)?))
             .await
             .map_err(err)
+    }
+
+    async fn channel_guild(&self, channel_id: &str) -> botsu_core::Result<Option<String>> {
+        let channel = ChannelId::new(snowflake(channel_id)?)
+            .to_channel(&self.http)
+            .await
+            .map_err(err)?;
+        Ok(channel.guild().map(|c| c.guild_id.to_string()))
+    }
+
+    async fn member_roles(&self, guild_id: &str, user_id: &str) -> botsu_core::Result<Vec<String>> {
+        let member = GuildId::new(snowflake(guild_id)?)
+            .member(&self.http, UserId::new(snowflake(user_id)?))
+            .await
+            .map_err(err)?;
+        Ok(member.roles.iter().map(|r| r.to_string()).collect())
+    }
+
+    async fn roles(&self, guild_id: &str) -> botsu_core::Result<Vec<RoleInfo>> {
+        let roles = GuildId::new(snowflake(guild_id)?)
+            .roles(&self.http)
+            .await
+            .map_err(err)?;
+        Ok(roles
+            .values()
+            .map(|r| RoleInfo {
+                id: r.id.to_string(),
+                name: r.name.clone(),
+                permissions: r.permissions.bits(),
+            })
+            .collect())
+    }
+
+    async fn add_role(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        role_id: &str,
+    ) -> botsu_core::Result<()> {
+        self.http
+            .add_member_role(
+                GuildId::new(snowflake(guild_id)?),
+                UserId::new(snowflake(user_id)?),
+                RoleId::new(snowflake(role_id)?),
+                None,
+            )
+            .await
+            .map_err(err)
+    }
+
+    async fn remove_role(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        role_id: &str,
+    ) -> botsu_core::Result<()> {
+        self.http
+            .remove_member_role(
+                GuildId::new(snowflake(guild_id)?),
+                UserId::new(snowflake(user_id)?),
+                RoleId::new(snowflake(role_id)?),
+                None,
+            )
+            .await
+            .map_err(err)
+    }
+
+    async fn recent_messages(
+        &self,
+        channel_id: &str,
+        before: Option<&str>,
+        limit: u8,
+    ) -> botsu_core::Result<Vec<HistoryMessage>> {
+        let mut query = GetMessages::new().limit(limit.min(100));
+        if let Some(b) = before {
+            query = query.before(MessageId::new(snowflake(b)?));
+        }
+        let messages = ChannelId::new(snowflake(channel_id)?)
+            .messages(&self.http, query)
+            .await
+            .map_err(err)?;
+        Ok(messages
+            .into_iter()
+            .map(|m| HistoryMessage {
+                id: m.id.to_string(),
+                author_id: m.author.id.to_string(),
+                author_is_bot: m.author.bot,
+                timestamp: m.timestamp.unix_timestamp(),
+                content: m.content,
+            })
+            .collect())
     }
 
     async fn guild_owner(&self, guild_id: &str) -> botsu_core::Result<Option<String>> {

@@ -70,6 +70,10 @@ async fn import_target(
         }
     };
     if !announced.contains(&id) {
+        // Pasted lists carry channel IDs; never act on a channel in another server.
+        if ctx.ensure_channel_here(&id).await.is_err() {
+            return Err(format!("<#{id}>: not a channel in this server"));
+        }
         if let Err(e) = ctx.chat.send_message(&id, notice).await {
             tracing::info!(error = %e, channel = %id, "test post to import channel failed");
             return Err(format!("<#{id}>: I can't post there"));
@@ -112,6 +116,7 @@ fn scope(ctx: &CommandContext) -> Scope<'_> {
 /// Posts a notice in the target channel before saving the subscription, which also proves
 /// the bot is allowed to post there.
 async fn announce_in_target(ctx: &CommandContext, target: &str, text: &str) -> Result<()> {
+    ctx.ensure_channel_here(target).await?;
     ctx.chat
         .send_message(target, text)
         .await
