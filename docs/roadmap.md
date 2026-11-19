@@ -106,7 +106,7 @@ Get the project building and publishing itself before the bigger features land.
 
 ### Running it anywhere
 - [ ] `deploy/docker-compose.yml`: image from Docker Hub, `env_file`, `/data` volume, `restart: unless-stopped`.
-- [ ] `deploy/unraid/botsu.xml`: Unraid template pointing at the Docker Hub image (appdata path, Extra Parameters `--env-file`, `--user 99:100`). Keep a snapshot in the server notes.
+- [ ] `deploy/unraid/botsu.xml`: interim version exists (local `botsu:latest`, placeholder icon `assets/monkasS.png`); switch it to the Docker Hub image (appdata path, Extra Parameters `--env-file`, `--user 99:100`). Keep a snapshot in the server notes.
 - [ ] `docs/install-docker.md`: plain `docker run` and Compose instructions for anyone.
 - [ ] **Log invite links at startup** (terminal and `docker logs`), one per connected platform, so whoever spins the bot up can add it to servers right away. No extra config needed: Discord's application ID comes from the Ready event (`ready.application.id`); on Fluxer the bot user ID *is* the application ID (seen in the token check), and the host comes from discovery. Permissions value grows with later phases (one constant per phase's needs). Then `*_APPLICATION_ID` in `.env.example` can be dropped.
 - [ ] `docs/install-linux.md`: native install without containers: download or `cargo build --release`, a `botsu` system user, `/etc/botsu/botsu.env` (mode 600), `/var/lib/botsu` as the data directory, and a hardened systemd unit (`deploy/systemd/botsu.service`). Phase 6 adds the ffmpeg and yt-dlp steps.

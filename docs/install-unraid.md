@@ -77,8 +77,16 @@ docker run -d --name botsu --restart unless-stopped \
 ```
 
 No ports are published: the bot only makes outgoing connections. The container shows up in
-Unraid's **Docker** tab (start/stop/logs work there), but it has no template yet, so settings
-are changed by editing the env file and running this step again.
+Unraid's **Docker** tab (start/stop/logs work there). Created this way it has no template, so
+settings are changed by editing the env file and running this step again.
+
+**Or with the template** (adds the icon and an Edit page in the Docker tab): copy
+[`deploy/unraid/botsu.xml`](../deploy/unraid/botsu.xml) to
+`/boot/config/plugins/dockerMan/templates-user/my-botsu.xml`, then **Docker → Add Container →
+Template: botsu** → **Apply**. It sets the same `--user`, `--env-file` and `/data` mapping as the
+command above. The template uses the local image `botsu:latest` from step 3; if Unraid tries to
+pull it from Docker Hub and fails, use the `docker run` command instead until phase 3 publishes
+the image. The icon is loaded from GitHub, so it appears once `assets/monkasS.png` is pushed.
 
 ## 5. Check it
 
