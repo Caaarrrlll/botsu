@@ -74,7 +74,7 @@ them.
 | Audio path | ffmpeg → 48 kHz stereo f32 PCM → songbird `RawAdapter` (no decoders compiled in) | fluxer-rust `play_music` (ffmpeg → s16 PCM → LiveKit) |
 | Who is in voice | GUILD_CREATE snapshot + VOICE_STATE_UPDATE (no serenity cache) | GUILD_SYNC / PASSIVE_UPDATES snapshots + VOICE_STATE_UPDATE |
 
-`main` creates the voice adapters before the platforms connect, hands them to the `voice` command
+`main` creates the voice adapters before the platforms connect, hands them to the `audio` command
 (a manual test, bot owners only) and passes each to its platform's `run`, which fills in the
 connection and voice states. Phase 6 (music) builds its queue on this interface. The Docker image
 carries a static ffmpeg binary (`mwader/static-ffmpeg`) because Debian's package adds ~650 MB of

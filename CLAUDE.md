@@ -40,7 +40,8 @@ schema, adapter trait or alert rules change.
 
 ## Voice (phase 0 test, phase 6 groundwork)
 - `VoiceAdapter` in botsu-core/src/voice.rs; `DiscordVoice` (songbird 0.6, DAVE) and `FluxerVoice` (LiveKit).
-  `!voice join|play|stop|leave|where` (bot owners) tests it on the deployed container. ffmpeg in the image
+  Idle timer: leaves after 10 min without sound (`IDLE_TIMEOUT`, checked every 30 s, one watcher per server).
+  `!audio join|play|stop|leave|where` (bot owners) tests it on the deployed container. ffmpeg in the image
   is a static binary from mwader/static-ffmpeg (Debian's package made the image 830 MB). Build needs
   libopus-dev (Docker build stage, CI); runtime needs libopus0.
 

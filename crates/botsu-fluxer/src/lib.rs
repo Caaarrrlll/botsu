@@ -245,6 +245,18 @@ impl VoiceAdapter for FluxerVoice {
             .await
             .map_err(|e| err(format!("leaving voice failed: {e}")))
     }
+
+    async fn is_connected(&self, guild_id: &str) -> bool {
+        self.conns.lock().await.contains_key(guild_id)
+    }
+
+    async fn is_playing(&self, guild_id: &str) -> bool {
+        self.playback
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(guild_id)
+            .is_some_and(|h| !h.is_finished())
+    }
 }
 
 /// Inbound side: receives gateway events and forwards them to the core.

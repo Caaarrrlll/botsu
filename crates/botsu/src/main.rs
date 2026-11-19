@@ -6,7 +6,7 @@ use std::time::Duration;
 use anyhow::Result;
 use botsu_core::alerts::{self, twitch::Twitch, youtube::YouTubeApi, TubeCommand, TwitchCommand};
 use botsu_core::storage::Store;
-use botsu_core::voice::{VoiceAdapter, VoiceCommand};
+use botsu_core::voice::{AudioCommand, VoiceAdapter};
 use botsu_core::Bot;
 use botsu_discord::DiscordVoice;
 use botsu_fluxer::FluxerVoice;
@@ -85,7 +85,7 @@ async fn main() -> Result<()> {
     ));
     bot.register(TwitchCommand::new(store.clone(), twitch.clone()));
 
-    // Voice adapters exist up front so the `voice` command can hold them; the platform tasks
+    // Voice adapters exist up front so the `audio` command can hold them; the platform tasks
     // below fill in their connections and voice states.
     let discord_voice = config.discord.as_ref().map(|_| DiscordVoice::new());
     let fluxer_voice = config.fluxer.as_ref().map(|_| FluxerVoice::new());
@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
     if let Some(v) = &fluxer_voice {
         voices.push(v.clone());
     }
-    bot.register(VoiceCommand::new(voices));
+    bot.register(AudioCommand::new(voices));
     let bot = Arc::new(bot);
 
     // One task per platform. If any adapter dies, exit so Docker restarts us.
