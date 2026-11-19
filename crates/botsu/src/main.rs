@@ -14,8 +14,12 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info,botsu=debug")),
+            // A blank RUST_LOG (an empty Unraid template field) means "default", not "errors only".
+            std::env::var("RUST_LOG")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .and_then(|v| EnvFilter::try_new(v).ok())
+                .unwrap_or_else(|| EnvFilter::new("info,botsu=debug")),
         )
         .init();
 
