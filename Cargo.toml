@@ -1,0 +1,34 @@
+[workspace]
+resolver = "2"
+members = ["crates/botsu-core", "crates/botsu-discord", "crates/botsu-fluxer", "crates/botsu"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+botsu-core = { path = "crates/botsu-core" }
+botsu-discord = { path = "crates/botsu-discord" }
+botsu-fluxer = { path = "crates/botsu-fluxer" }
+
+# Pinned exactly: fluxer-rust is 0.x and Fluxer's API is still moving.
+# Bump deliberately and re-test against a live instance.
+fluxer-rust = "=0.2.1"
+
+# Gateway + REST only: no cache (saves memory), no standard_framework (deprecated).
+serenity = { version = "0.12.5", default-features = false, features = ["builder", "client", "gateway", "model", "http", "rustls_backend"] }
+
+anyhow = "1"
+async-trait = "0.1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[profile.release]
+# Small, lean binary for the Unraid container.
+lto = "thin"
+codegen-units = 1
+strip = true

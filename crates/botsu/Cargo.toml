@@ -1,0 +1,16 @@
+[package]
+name = "botsu"
+description = "botsu bot binary: reads config, starts adapters."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+botsu-core.workspace = true
+botsu-discord.workspace = true
+botsu-fluxer.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
