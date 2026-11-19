@@ -86,6 +86,12 @@ docker pull caaarrrlll/botsu:latest   # then Apply Update / recreate the contain
 
 Settings and subscriptions live in `/mnt/user/appdata/botsu`, so they survive updates.
 
+**The template itself** (field descriptions, new fields) only changes if you download it again with
+the `wget` from step 1. Careful: Unraid saves the values you entered in the template's fields into
+that same file when you click **Apply**, so downloading it again resets those fields to blank. Only
+re-download while you keep your settings in `botsu.env`; otherwise note your values first, or edit
+the file by hand. Image updates don't need a new template.
+
 ## Keeping secrets elsewhere (optional)
 
 Settings can also come from environment variables, which override the file: add
