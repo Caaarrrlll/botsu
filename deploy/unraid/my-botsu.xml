@@ -1,33 +1,35 @@
 <?xml version="1.0"?>
 <!--
-  Unraid template for botsu. Interim version: uses a locally built image (botsu:latest) until
-  phase 3 publishes to Docker Hub, then <Repository> changes to the Docker Hub image.
+  Unraid template for botsu.
   Install: copy to /boot/config/plugins/dockerMan/templates-user/my-botsu.xml, then
-  Docker → Add Container → Template: botsu. See docs/install-unraid.md.
-  Settings and tokens are NOT in this template: they live in the root-only env file
-  given in Extra Parameters (/mnt/user/appdata/secrets/botsu.env).
+  Docker → Add Container → Template: botsu → Apply. See docs/install-unraid.md.
+  Nothing has to exist beforehand: on first start the container creates
+  /mnt/user/appdata/botsu/botsu.env (settings, including tokens) and waits until a token is
+  filled in. Tokens are deliberately not template fields, so they don't end up in this file.
 -->
 <Container version="2">
   <Name>botsu</Name>
-  <Repository>botsu:latest</Repository>
-  <Registry/>
+  <Repository>caaarrrlll/botsu:latest</Repository>
+  <Registry>https://hub.docker.com/r/caaarrrlll/botsu</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/Caaarrrlll/botsu/issues</Support>
   <Project>https://github.com/Caaarrrlll/botsu</Project>
-  <Overview>Lean self-hosted chat bot for Discord and Fluxer: YouTube upload and Twitch live alerts, with moderation and music planned. Replaces Red-DiscordBot without Java/Lavalink. All settings come from the env file in Extra Parameters (see .env.example in the repo); no ports are needed.</Overview>
+  <Overview>Lean self-hosted chat bot for Discord and Fluxer: YouTube upload/live and Twitch live alerts, with moderation and music planned. Replaces Red-DiscordBot without Java/Lavalink. After the first start, fill in the settings file the container creates at /mnt/user/appdata/botsu/botsu.env (Discord/Fluxer tokens, owners, YouTube/Twitch keys); the bot picks it up within 30 seconds. No ports are needed.</Overview>
   <Category>Tools: Status:Beta</Category>
   <WebUI/>
-  <TemplateURL/>
+  <TemplateURL>https://raw.githubusercontent.com/Caaarrrlll/botsu/master/deploy/unraid/my-botsu.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Caaarrrlll/botsu/master/assets/monkasS.png</Icon>
-  <ExtraParams>--user 99:100 --restart unless-stopped --env-file /mnt/user/appdata/secrets/botsu.env</ExtraParams>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
   <PostArgs/>
   <CPUset/>
   <DateInstalled/>
   <DonateText/>
   <DonateLink/>
-  <Requires>A root-only env file at /mnt/user/appdata/secrets/botsu.env with at least DISCORD_TOKEN or FLUXER_TOKEN (no quotes around values), and /mnt/user/appdata/botsu owned by 99:100.</Requires>
-  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/botsu" Mode="rw" Description="SQLite database: alert subscriptions and what has already been posted. Must be writable by 99:100." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/botsu</Config>
+  <Requires/>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/botsu" Mode="rw" Description="Database and the settings file botsu.env (created on first start: put your tokens there)." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/botsu</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User the bot runs as (Unraid default: 99 = nobody)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group the bot runs as (Unraid default: 100 = users)." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
 </Container>

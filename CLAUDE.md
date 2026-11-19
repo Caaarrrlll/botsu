@@ -31,6 +31,9 @@ schema, adapter trait or alert rules change.
   token), `mod.rs` (pollers, dedup rules, delivery), `commands.rs` (`tube`, `twitch`).
 - Adapters call `bot.register_chat(..)` once connected so pollers can post; `bot.chat(platform)`.
 - Admin commands use `ctx.require_owner()` (`BOTSU_OWNERS`) until phase 4 permissions.
+- Config: env vars first, then `<data dir>/botsu.env` (auto-created on first start; bot waits for a token).
+  Docker entrypoint fixes `/data` ownership and drops to PUID:PGID (99:100). Image: `caaarrrlll/botsu:latest`,
+  pushed by hand from this PC during development (user is fine publishing often).
 - Network test: `cargo test -p botsu-core -- --ignored` (hits real YouTube).
 
 ## Current phase

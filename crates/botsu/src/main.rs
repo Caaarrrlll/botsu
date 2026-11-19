@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let config = config::Config::from_env()?;
+    let config = load_config().await?;
     tracing::info!(
         prefix = %config.prefix,
         data_dir = %config.data_dir.display(),
@@ -104,6 +104,37 @@ async fn main() -> Result<()> {
         _ = shutdown_signal() => {
             tracing::info!("shutting down");
             Ok(())
+        }
+    }
+}
+
+/// Loads the configuration. With no platform token anywhere yet, makes sure the settings file
+/// exists (creating a commented template) and waits for it to be filled in, so a fresh
+/// container needs no files prepared in advance.
+async fn load_config() -> Result<config::Config> {
+    let data_dir = config::data_dir();
+    let settings = data_dir.join(config::SETTINGS_FILE);
+    let mut told = false;
+    loop {
+        let vars = config::Vars::new(config::read_settings(&settings)?);
+        if let Some(cfg) = config::Config::load(&vars, data_dir.clone())? {
+            return Ok(cfg);
+        }
+        if !told {
+            if !settings.exists() {
+                config::write_settings_template(&settings)?;
+                tracing::warn!(file = %settings.display(), "created a settings file");
+            }
+            tracing::warn!(
+                file = %settings.display(),
+                "no platform configured: put DISCORD_TOKEN and/or FLUXER_TOKEN in this file \
+                 (or the environment). Checking again every 30 seconds"
+            );
+            told = true;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(30)) => {}
+            _ = shutdown_signal() => std::process::exit(0),
         }
     }
 }
