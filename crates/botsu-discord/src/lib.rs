@@ -15,7 +15,7 @@ use serenity::all::{
 use serenity::async_trait;
 use songbird::input::core::io::ReadOnlySource;
 use songbird::input::{ChildContainer, Input, RawAdapter};
-use songbird::tracks::PlayMode;
+use songbird::tracks::{PlayMode, TrackHandle};
 use songbird::{SerenityInit, Songbird};
 
 #[derive(Debug, Clone)]
@@ -123,6 +123,8 @@ pub struct DiscordVoice {
     songbird: Arc<Songbird>,
     /// (guild, user) → voice channel.
     states: Mutex<HashMap<(u64, u64), u64>>,
+    /// guild → the track playing (or last played) there, for the idle timer.
+    tracks: Mutex<HashMap<u64, TrackHandle>>,
 }
 
 impl DiscordVoice {
@@ -130,11 +132,16 @@ impl DiscordVoice {
         Arc::new(Self {
             songbird: Songbird::serenity(),
             states: Mutex::new(HashMap::new()),
+            tracks: Mutex::new(HashMap::new()),
         })
     }
 
     fn states(&self) -> std::sync::MutexGuard<'_, HashMap<(u64, u64), u64>> {
         self.states.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn tracks(&self) -> std::sync::MutexGuard<'_, HashMap<u64, TrackHandle>> {
+        self.tracks.lock().unwrap_or_else(|p| p.into_inner())
     }
 
     fn set_state(&self, guild: GuildId, user: UserId, channel: Option<ChannelId>) {
@@ -216,6 +223,7 @@ impl VoiceAdapter for DiscordVoice {
             let mut call = call.lock().await;
             (call.play_only_input(input), call.current_channel())
         };
+        self.tracks().insert(snowflake(guild_id)?, track.clone());
 
         // Report what songbird sees after a moment, so "joined but silent" can be told apart
         // from a failing track: playing with an advancing position means audio is being sent.
@@ -249,11 +257,33 @@ impl VoiceAdapter for DiscordVoice {
 
     async fn leave(&self, guild_id: &str) -> botsu_core::Result<()> {
         // remove() also drops the call; "not in a channel" isn't worth an error here.
-        let _ = self
-            .songbird
-            .remove(GuildId::new(snowflake(guild_id)?))
-            .await;
+        let guild = snowflake(guild_id)?;
+        let _ = self.songbird.remove(GuildId::new(guild)).await;
+        self.tracks().remove(&guild);
         Ok(())
+    }
+
+    async fn is_connected(&self, guild_id: &str) -> bool {
+        let Ok(guild) = snowflake(guild_id) else {
+            return false;
+        };
+        match self.songbird.get(GuildId::new(guild)) {
+            Some(call) => call.lock().await.current_channel().is_some(),
+            None => false,
+        }
+    }
+
+    async fn is_playing(&self, guild_id: &str) -> bool {
+        let Ok(guild) = snowflake(guild_id) else {
+            return false;
+        };
+        let Some(track) = self.tracks().get(&guild).cloned() else {
+            return false;
+        };
+        matches!(
+            track.get_info().await.map(|s| s.playing),
+            Ok(PlayMode::Play)
+        )
     }
 }
 
