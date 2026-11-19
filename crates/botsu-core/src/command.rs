@@ -4,6 +4,7 @@
 //! commands are the common denominator. Discord slash commands can be layered
 //! on later by having the Discord adapter build the same [`CommandContext`].
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -19,7 +20,11 @@ pub struct CommandContext {
     pub args: String,
     /// The author is listed in `BOTSU_OWNERS`.
     pub is_owner: bool,
+    /// What to type before this command's name in usage hints: the bot prefix, plus the group
+    /// for grouped commands (`"!mod "` while running `!mod ban`).
     pub prefix: String,
+    /// The bot's own command prefix (`"!"`), for recognising commands in chat.
+    pub bot_prefix: String,
     /// The author's permission level. Exact for commands whose `level()` is above
     /// `Everyone` (the bot works it out before running them); otherwise `Everyone`, or
     /// `BotOwner` for bot owners.
@@ -82,7 +87,124 @@ pub trait Command: Send + Sync {
         Level::Everyone
     }
 
+    /// Other names that run this command (not listed in `help`).
+    fn aliases(&self) -> &[&'static str] {
+        &[]
+    }
+
+    /// The bot works out the caller's exact level before running the command even when
+    /// `level()` is `Everyone` (groups whose subcommands need more).
+    fn needs_level(&self) -> bool {
+        false
+    }
+
     async fn run(&self, ctx: CommandContext) -> Result<()>;
+}
+
+/// Commands grouped under one name, like `!mod ban …` and `!admin addrole …`. Each subcommand
+/// keeps its own level; the group shows up in `help` for anyone who may run at least one of
+/// them, and `!<group>` alone lists the ones the caller may use.
+pub struct Group {
+    name: &'static str,
+    help: &'static str,
+    title: &'static str,
+    aliases: Vec<&'static str>,
+    subs: BTreeMap<&'static str, Arc<dyn Command>>,
+}
+
+impl Group {
+    pub fn new(name: &'static str, title: &'static str, help: &'static str) -> Self {
+        Self {
+            name,
+            help,
+            title,
+            aliases: Vec::new(),
+            subs: BTreeMap::new(),
+        }
+    }
+
+    pub fn alias(mut self, alias: &'static str) -> Self {
+        self.aliases.push(alias);
+        self
+    }
+
+    pub fn with(mut self, command: impl Command + 'static) -> Self {
+        self.subs.insert(command.name(), Arc::new(command));
+        self
+    }
+
+    fn listing(&self, ctx: &CommandContext) -> String {
+        let mut out = format!(
+            "**{}** (`{}{} <command>`):",
+            self.title, ctx.prefix, self.name
+        );
+        for cmd in self.subs.values().filter(|c| c.level() <= ctx.level) {
+            out.push_str(&format!(
+                "\n`{}{} {}`: {}",
+                ctx.prefix,
+                self.name,
+                cmd.name(),
+                cmd.help()
+            ));
+        }
+        out
+    }
+}
+
+#[async_trait]
+impl Command for Group {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn help(&self) -> &'static str {
+        self.help
+    }
+
+    fn level(&self) -> Level {
+        self.subs
+            .values()
+            .map(|c| c.level())
+            .min()
+            .unwrap_or(Level::Everyone)
+    }
+
+    fn aliases(&self) -> &[&'static str] {
+        &self.aliases
+    }
+
+    fn needs_level(&self) -> bool {
+        self.subs.values().any(|c| c.level() > Level::Everyone)
+    }
+
+    async fn run(&self, mut ctx: CommandContext) -> Result<()> {
+        let args = ctx.args.clone();
+        let (sub, rest) = match args.split_once(char::is_whitespace) {
+            Some((s, r)) => (s.to_lowercase(), r.trim().to_owned()),
+            None => (args.to_lowercase(), String::new()),
+        };
+        if sub.is_empty() || sub == "help" {
+            ctx.reply(&self.listing(&ctx)).await?;
+            return Ok(());
+        }
+        let Some(cmd) = self.subs.get(sub.as_str()).cloned() else {
+            return Err(Error::Usage(format!(
+                "There's no `{sub}` here.\n{}",
+                self.listing(&ctx)
+            )));
+        };
+        if ctx.level < cmd.level() {
+            return Err(Error::Usage(format!(
+                "You need to be {} to use `{}{} {sub}`.",
+                cmd.level(),
+                ctx.prefix,
+                self.name
+            )));
+        }
+        ctx.prefix = format!("{}{} ", ctx.prefix, self.name);
+        ctx.args = rest;
+        cmd.run(ctx).await
+    }
 }
 
 /// Splits `"$play some song"` into `("play", "some song")` if it starts with `prefix`.

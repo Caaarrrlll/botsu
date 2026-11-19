@@ -5,14 +5,11 @@ use std::time::Duration;
 
 use anyhow::Result;
 use botsu_core::alerts::{self, twitch::Twitch, youtube::YouTubeApi, TubeCommand, TwitchCommand};
-use botsu_core::moderation::{
-    self, BansCommand, CaseCommand, CasesCommand, ModCommand, ModTools, ReasonCommand,
-    UnwarnCommand, WarningsCommand,
-};
+use botsu_core::moderation::{self, ModTools};
 use botsu_core::permissions::Permissions;
-use botsu_core::server::{AnnounceCommand, CleanupCommand, RoleCommand, SetCommand};
+use botsu_core::server::{self, SetCommand};
 use botsu_core::storage::Store;
-use botsu_core::voice::{AudioCommand, VoiceAdapter};
+use botsu_core::voice::{MusicCommand, VoiceAdapter};
 use botsu_core::Bot;
 use botsu_discord::DiscordVoice;
 use botsu_fluxer::FluxerVoice;
@@ -84,20 +81,9 @@ async fn main() -> Result<()> {
     let permissions = Arc::new(Permissions::new(store.clone()));
     bot.set_permissions(permissions.clone());
     bot.register(SetCommand::new(store.clone()));
-    bot.register(CleanupCommand);
-    bot.register(RoleCommand::add());
-    bot.register(RoleCommand::remove());
-    bot.register(AnnounceCommand);
+    bot.register(server::admin_group());
     let mod_tools = ModTools::new(store.clone(), permissions);
-    for command in ModCommand::all(&mod_tools) {
-        bot.register(command);
-    }
-    bot.register(CaseCommand(mod_tools.clone()));
-    bot.register(CasesCommand(mod_tools.clone()));
-    bot.register(ReasonCommand(mod_tools.clone()));
-    bot.register(WarningsCommand(mod_tools.clone()));
-    bot.register(UnwarnCommand(mod_tools.clone()));
-    bot.register(BansCommand(mod_tools.clone()));
+    bot.register(moderation::group(&mod_tools));
     if !bot.has_owners() {
         tracing::warn!("BOTSU_OWNERS is empty: nobody can run tube/twitch import or tube shorts. Run one to see your user ID.");
     }
@@ -119,7 +105,7 @@ async fn main() -> Result<()> {
     if let Some(v) = &fluxer_voice {
         voices.push(v.clone());
     }
-    bot.register(AudioCommand::new(voices));
+    bot.register(MusicCommand::new(voices));
     let bot = Arc::new(bot);
 
     // One task per platform. If any adapter dies, exit so Docker restarts us.

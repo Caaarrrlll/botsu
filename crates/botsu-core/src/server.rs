@@ -13,7 +13,7 @@ use async_trait::async_trait;
 
 use crate::adapter::{ChatAdapter, RoleInfo, ADMINISTRATOR};
 use crate::alerts::parse_channel;
-use crate::command::{Command, CommandContext};
+use crate::command::{Command, CommandContext, Group};
 use crate::error::{Error, Result};
 use crate::moderation::MODLOG_KEY;
 use crate::permissions::{Level, ADMIN_ROLE, MOD_ROLE};
@@ -272,7 +272,10 @@ impl Command for CleanupCommand {
                     .ok_or_else(|| Error::Usage(format!("`{who}` isn't a user mention or ID.")))?;
                 (Filter::User(user), parse_count(Some(n), &p)?)
             }
-            ["bots" | "bot", n] => (Filter::Bots(p.clone()), parse_count(Some(n), &p)?),
+            ["bots" | "bot", n] => (
+                Filter::Bots(ctx.bot_prefix.clone()),
+                parse_count(Some(n), &p)?,
+            ),
             _ => return Err(Error::Usage(Self::usage(&p))),
         };
 
@@ -336,6 +339,18 @@ impl Command for CleanupCommand {
         }
         Ok(())
     }
+}
+
+/// `admin addrole | removerole | announce`.
+pub fn admin_group() -> Group {
+    Group::new(
+        "admin",
+        "Admin",
+        "Admin tools: addrole, removerole, announce (admins).",
+    )
+    .with(RoleCommand::add())
+    .with(RoleCommand::remove())
+    .with(AnnounceCommand)
 }
 
 // --- roles ----------------------------------------------------------------------------------------
