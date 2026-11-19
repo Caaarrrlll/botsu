@@ -506,6 +506,17 @@ impl VoiceAdapter for DiscordVoice {
             Ok(PlayMode::Play)
         )
     }
+
+    async fn set_paused(&self, guild_id: &str, paused: bool) -> botsu_core::Result<()> {
+        let guild = snowflake(guild_id)?;
+        let track = self
+            .tracks()
+            .get(&guild)
+            .cloned()
+            .ok_or_else(|| Error::Usage("Nothing is playing.".into()))?;
+        let result = if paused { track.pause() } else { track.play() };
+        result.map_err(|_| Error::Usage("Nothing is playing.".into()))
+    }
 }
 
 /// Inbound side: receives gateway events and forwards them to the core.

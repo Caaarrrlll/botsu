@@ -73,6 +73,11 @@ struct Guild {
     /// Wakes the player to skip the current track. New for each player task, so a skip sent
     /// while nothing plays can't skip the next track later.
     skip: Arc<Notify>,
+    /// The current track is paused (`music pause`).
+    paused: bool,
+    /// When it was last resumed: the player gives a resumed track the same start grace as a new
+    /// one, so a track that hasn't picked up again yet isn't taken as finished.
+    resumed_at: Option<tokio::time::Instant>,
 }
 
 pub struct Music {
@@ -126,6 +131,8 @@ impl Music {
             chat: chat.clone(),
             running: false,
             skip: Arc::new(Notify::new()),
+            paused: false,
+            resumed_at: None,
         });
         if g.queue.len() + tracks.len() > QUEUE_MAX {
             return Err(Error::Usage(format!(
@@ -158,6 +165,8 @@ impl Music {
                 match g.queue.pop_front() {
                     Some(t) => {
                         g.current = Some(t.clone());
+                        g.paused = false;
+                        g.resumed_at = None;
                         Some((t, g.chat.clone(), g.text_channel.clone(), g.skip.clone()))
                     }
                     None => {
@@ -219,7 +228,12 @@ impl Music {
                     self.clear(&key);
                     return;
                 }
-                if started.elapsed() >= START_GRACE && !voice.is_playing(&guild).await {
+                let (paused, resumed_at) = self
+                    .guilds()
+                    .get(&key)
+                    .map_or((false, None), |g| (g.paused, g.resumed_at));
+                let since = resumed_at.map_or(started, |r| r.max(started));
+                if !paused && since.elapsed() >= START_GRACE && !voice.is_playing(&guild).await {
                     break;
                 }
             }
@@ -239,6 +253,35 @@ impl Music {
             g.skip.notify_one();
         }
         had
+    }
+
+    /// Marks the current track paused or resumed. `Err` with a message for the user if nothing
+    /// plays or it already is in that state.
+    fn mark_paused(&self, key: &Key, paused: bool) -> Result<Track> {
+        let mut guilds = self.guilds();
+        let g = guilds
+            .get_mut(key)
+            .filter(|g| g.current.is_some())
+            .ok_or_else(|| Error::Usage("Nothing is playing.".into()))?;
+        if g.paused == paused {
+            return Err(Error::Usage(
+                if paused {
+                    "Already paused."
+                } else {
+                    "It isn't paused."
+                }
+                .into(),
+            ));
+        }
+        g.paused = paused;
+        if !paused {
+            g.resumed_at = Some(tokio::time::Instant::now());
+        }
+        Ok(g.current.clone().expect("checked above"))
+    }
+
+    fn is_paused(&self, key: &Key) -> bool {
+        self.guilds().get(key).is_some_and(|g| g.paused)
     }
 
     fn skip(&self, key: &Key) -> Option<Track> {
@@ -270,6 +313,8 @@ impl Music {
 enum Sub {
     Play,
     Skip,
+    Pause,
+    Resume,
     Stop,
     Queue,
     Now,
@@ -284,9 +329,11 @@ enum Sub {
 }
 
 impl Sub {
-    const ALL: [Sub; 13] = [
+    const ALL: [Sub; 15] = [
         Sub::Play,
         Sub::Skip,
+        Sub::Pause,
+        Sub::Resume,
         Sub::Stop,
         Sub::Queue,
         Sub::Now,
@@ -306,7 +353,7 @@ pub fn group(music: &Arc<Music>) -> Group {
     let mut group = Group::new(
         "music",
         "Music",
-        "Music: play, skip, stop, queue, now, remove, clear, shuffle, join, leave.",
+        "Music: play, skip, pause, resume, stop, queue, now, remove, clear, shuffle, join, leave.",
     );
     for sub in Sub::ALL {
         group = group.with(MusicCommand {
@@ -453,6 +500,9 @@ impl MusicCommand {
             return Ok(());
         };
         let mut out = format!("Now playing {}", describe(&current));
+        if self.music.is_paused(&here.key) {
+            out.push_str(" (paused)");
+        }
         if !queue.is_empty() {
             let total: u64 = queue.iter().filter_map(|t| t.duration).sum();
             out.push_str(&format!(
@@ -480,6 +530,8 @@ impl Command for MusicCommand {
         match self.sub {
             Sub::Play => "play",
             Sub::Skip => "skip",
+            Sub::Pause => "pause",
+            Sub::Resume => "resume",
             Sub::Stop => "stop",
             Sub::Queue => "queue",
             Sub::Now => "now",
@@ -500,6 +552,8 @@ impl Command for MusicCommand {
                 "Play or queue a song: search words, or a YouTube (or other) link or playlist."
             }
             Sub::Skip => "Skip the current song.",
+            Sub::Pause => "Pause the current song (I leave after 10 minutes paused).",
+            Sub::Resume => "Resume a paused song.",
             Sub::Stop => "Stop and empty the queue.",
             Sub::Queue => "Show the queue.",
             Sub::Now => "Show what's playing.",
@@ -539,9 +593,14 @@ impl Command for MusicCommand {
             Sub::Play => self.play(&ctx, &here).await?,
             Sub::Queue => self.queue(&ctx, &here).await?,
             Sub::Now => {
+                let paused = if self.music.is_paused(&here.key) {
+                    " (paused)"
+                } else {
+                    ""
+                };
                 let text = match self.music.snapshot(&here.key).0 {
                     Some(t) => format!(
-                        "Now playing {} · requested by {}\n<{}>",
+                        "Now playing {}{paused} · requested by {}\n<{}>",
                         describe(&t),
                         t.requester,
                         t.url
@@ -555,6 +614,25 @@ impl Command for MusicCommand {
                 let text = match self.music.skip(&here.key) {
                     Some(t) => format!("Skipped {}.", describe(&t)),
                     None => "Nothing is playing.".into(),
+                };
+                ctx.reply(&text).await?;
+            }
+            Sub::Pause | Sub::Resume => {
+                self.require_listener(&ctx, &here).await?;
+                let pause = self.sub == Sub::Pause;
+                let track = self.music.mark_paused(&here.key, pause)?;
+                if let Err(e) = here.voice.set_paused(&here.guild, pause).await {
+                    let _ = self.music.mark_paused(&here.key, !pause);
+                    return Err(e);
+                }
+                let text = if pause {
+                    format!(
+                        "Paused {}. `{}resume` to continue; I leave after 10 minutes paused.",
+                        describe(&track),
+                        ctx.prefix
+                    )
+                } else {
+                    format!("Resumed {}.", describe(&track))
                 };
                 ctx.reply(&text).await?;
             }

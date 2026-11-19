@@ -286,7 +286,7 @@ Fluxer's moderation endpoints are untested against the instance; note anything o
 
 ```
 !music play <search words or link>   ← joins your voice channel; YouTube links, playlists, other sites
-!music skip    !music stop    !music leave
+!music skip    !music pause   !music resume   !music stop    !music leave
 !music queue   !music now     !music remove <n>   !music clear   !music shuffle
 !music join
 !music test [url]    !music where    !music update     ← bot owners (tone test, voice states, yt-dlp)
@@ -305,16 +305,18 @@ with its version. It's saved in `/data/bin`, so later starts skip the download.
 | Log shows `yt-dlp ready` with a version | | |
 | `!music play never gonna give you up` joins and posts "Now playing …"; you hear it | | |
 | Two more `!music play …`: "Queued … at position n"; `!music queue` lists them | | |
+| `!music pause`, wait a minute, `!music resume`: it carries on where it stopped; `!music now` says "(paused)" while paused | | |
 | `!music skip` moves to the next track; the next one starts by itself when one ends | | |
 | A playlist link queues its tracks ("Queued n tracks from the playlist") | | |
 | `!music remove 2`, `!music shuffle`, `!music clear`, `!music stop` | | |
 | Someone outside the bot's channel can't `!music skip`; a mod can | | |
 | A long track (30+ min) plays to the end without cutting off | | |
 | `!music update` reports the yt-dlp version | | |
-| Memory while playing (Unraid's Docker page), to compare with Red + Lavalink | | |
+| Memory while playing (Unraid's Docker page), to compare with Red + Lavalink | | ~230 MB |
 
-On Fluxer, playback uses fluxer-rust's player, which has no reconnect on network hiccups; a long
-track cutting off early is the thing to watch for.
+A long pause can make YouTube drop the download (yt-dlp waits on a full pipe while paused); if a
+track stops right after a long pause, that's why. A long track cutting off early is also worth
+watching for.
 
 ## Troubleshooting
 

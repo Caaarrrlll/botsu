@@ -13,7 +13,8 @@ botsu's changes (search for "botsu patch"):
 
 Drop the copy when an upstream release has these, and re-check the notes in CLAUDE.md first.
 
-- `src/voice/mod.rs`: `FluxerVoiceConnection::play_input(input, stdin)`. Upstream's `play_music`
-  hardcodes ffmpeg's arguments (no reconnect flags), can't read from another process, never drains
-  ffmpeg's stderr while playing, and posts errors to a text channel. botsu pipes `yt-dlp -o -`
-  into it and gets errors back from the task.
+- `src/voice/mod.rs`: `FluxerVoiceConnection::play_input(input, stdin, paused)`. Upstream's
+  `play_music` hardcodes ffmpeg's arguments (no reconnect flags), can't read from another process,
+  never drains ffmpeg's stderr while playing, can't pause, and posts errors to a text channel.
+  botsu pipes `yt-dlp -o -` into it, pauses it with the `paused` flag and gets errors back from
+  the task.

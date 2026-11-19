@@ -96,11 +96,13 @@ impl FluxerVoiceConnection {
     /// botsu patch: plays `input` (a file or URL; `"pipe:0"` with `stdin` set to read from
     /// another process, such as `yt-dlp -o -`). Unlike [`play_music`](Self::play_music): network
     /// inputs get reconnect flags, ffmpeg's stderr is drained while playing (a full pipe would
-    /// stall it), and errors are returned from the task instead of posted to a channel.
+    /// stall it), errors are returned from the task instead of posted to a channel, and setting
+    /// `paused` holds playback (ffmpeg then blocks on its full output pipe).
     pub fn play_input(
         &self,
         input: &str,
         stdin: Option<Stdio>,
+        paused: Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<tokio::task::JoinHandle<Result<(), String>>, Box<dyn std::error::Error + Send + Sync>>
     {
         let mut cmd = Command::new("ffmpeg");
@@ -134,6 +136,9 @@ impl FluxerVoiceConnection {
             let mut buffer = vec![0u8; 960 * 2 * 2];
             let mut failure: Option<String> = None;
             loop {
+                while paused.load(std::sync::atomic::Ordering::Relaxed) {
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
                 match stdout.read_exact(&mut buffer).await {
                     Ok(_) => {
                         let samples: Vec<i16> = buffer
