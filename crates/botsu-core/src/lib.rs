@@ -13,10 +13,12 @@ pub mod bot;
 pub mod command;
 pub mod error;
 pub mod moderation;
+pub mod music;
 pub mod permissions;
 pub mod server;
 pub mod storage;
 pub mod voice;
+pub mod ytdlp;
 
 /// Permissions requested by the invite links logged at startup (Discord's permission bits, which
 /// Fluxer mirrors): View Channels (1024) + Send Messages (2048) + Embed Links (16384, needed for

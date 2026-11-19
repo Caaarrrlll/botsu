@@ -60,7 +60,13 @@ sudo systemctl restart botsu
 
 Changes to `/etc/botsu/botsu.env` need `sudo systemctl restart botsu`.
 
-## Later: music
+## Music
 
-Phase 6 (music) will add `ffmpeg` and `yt-dlp` to the requirements; this guide gets those steps
-then.
+Music needs three programs on the PATH of the user botsu runs as:
+
+- **ffmpeg**: `sudo apt install ffmpeg` (Debian/Ubuntu).
+- **Deno 2.3+**: yt-dlp needs a JavaScript runtime for YouTube. `curl -fsSL https://deno.land/install.sh | sh`,
+  then make sure `deno` is on botsu's PATH (for example copy `~/.deno/bin/deno` to `/usr/local/bin`).
+- **yt-dlp**: nothing to do. botsu downloads the standalone build into `<data dir>/bin` on first
+  start and updates it daily (`!music update` updates it right away). To use your own copy
+  instead, set `BOTSU_YTDLP=/path/to/yt-dlp` in `botsu.env` and keep it updated yourself.
