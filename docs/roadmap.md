@@ -62,7 +62,7 @@ Already done: workspace, `botsu-core`, `botsu-fluxer`, binary, env config, Docke
 - [x] Fluxer startup check: token and API URL verified before connecting; logs `voice_enabled` from `/.well-known/fluxer`.
 - [x] Test `ping` on the self-hosted Fluxer instance and on Discord (2026-11-19, prefix `!`, both answered from one process). Rest of the checklist in [testing.md](testing.md) (help, case, reconnect) still to run.
 - [x] `docker build` works (2026-11-19: 161 MB image; starts as `--user 99:100` and writes its database to a mounted `/data`).
-- [ ] Runs on Unraid: [install-unraid.md](install-unraid.md). Image published manually as `caaarrrlll/botsu:latest` (2026-11-19) until the phase 3 workflow does it.
+- [x] Runs on Unraid: [install-unraid.md](install-unraid.md). The image is published by CI (phase 3).
 - [x] Image runs as a non-root user and works with `--user 99:100` (Unraid's nobody:users) and with a mounted `/data`.
 
 **Done when:** the same container answers `$ping` on Discord and Fluxer at the same time.
@@ -201,9 +201,9 @@ Updated as phases land. ✅ works · 🟡 partial · ❌ not possible · — not
 | Prefix commands | ✅ | ✅ (self-hosted) | — |
 | Slash commands | optional | ❌ (not in fluxer-rust 0.2) | — |
 | Alerts | ✅ (code, live test pending) | ✅ (code, live test pending) | — |
-| Permissions / cleanup / admin | — | — | — |
-| Moderation | — | — | — |
-| Music | — | — (phase 0 decides) | — |
+| Permissions / cleanup / admin | ✅ (code, live test pending) | ✅ (code, live test pending) | — |
+| Moderation | ✅ (code, live test pending) | ✅ (code, live test pending) | — |
+| Music | 🟡 (worked before the pipe change; retest pending) | ✅ (play, queue, pause tested) | — |
 
 ## Risks
 
