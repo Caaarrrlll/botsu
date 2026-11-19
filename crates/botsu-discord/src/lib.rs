@@ -15,6 +15,7 @@ use serenity::all::{
 use serenity::async_trait;
 use songbird::input::core::io::ReadOnlySource;
 use songbird::input::{ChildContainer, Input, RawAdapter};
+use songbird::tracks::PlayMode;
 use songbird::{SerenityInit, Songbird};
 
 #[derive(Debug, Clone)]
@@ -205,14 +206,38 @@ impl VoiceAdapter for DiscordVoice {
             .map_err(|e| err(format!("joining voice failed: {e}")))
     }
 
-    async fn play(&self, guild_id: &str, source: &str) -> botsu_core::Result<()> {
+    async fn play(&self, guild_id: &str, source: &str) -> botsu_core::Result<Option<String>> {
         let call = self
             .songbird
             .get(GuildId::new(snowflake(guild_id)?))
             .ok_or_else(|| Error::Usage("I'm not in a voice channel; join first.".into()))?;
         let input = ffmpeg_input(source)?;
-        call.lock().await.play_only_input(input);
-        Ok(())
+        let (track, channel) = {
+            let mut call = call.lock().await;
+            (call.play_only_input(input), call.current_channel())
+        };
+
+        // Report what songbird sees after a moment, so "joined but silent" can be told apart
+        // from a failing track: playing with an advancing position means audio is being sent.
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        let state = track
+            .get_info()
+            .await
+            .map_err(|e| err(format!("couldn't read track state: {e}")))?;
+        tracing::info!(?channel, playing = ?state.playing, position = ?state.position, "Discord voice track state");
+        match state.playing {
+            PlayMode::Errored(e) => Err(err(format!("the audio track failed: {e}"))),
+            PlayMode::Play => Ok(Some(format!(
+                "songbird is sending audio (at {:.1} s). If you hear nothing, check the bot has \
+                 **Speak** in this voice channel.",
+                state.position.as_secs_f32()
+            ))),
+            other => Ok(Some(format!(
+                "the track already stopped ({other:?}) after {:.1} s: ffmpeg produced little or \
+                 no audio.",
+                state.position.as_secs_f32()
+            ))),
+        }
     }
 
     async fn stop(&self, guild_id: &str) -> botsu_core::Result<()> {

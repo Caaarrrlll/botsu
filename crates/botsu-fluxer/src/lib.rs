@@ -212,7 +212,7 @@ impl VoiceAdapter for FluxerVoice {
         Ok(())
     }
 
-    async fn play(&self, guild_id: &str, source: &str) -> botsu_core::Result<()> {
+    async fn play(&self, guild_id: &str, source: &str) -> botsu_core::Result<Option<String>> {
         let ctx = self.context()?;
         let conns = self.conns.lock().await;
         let conn = conns
@@ -229,7 +229,7 @@ impl VoiceAdapter for FluxerVoice {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .insert(guild_id.to_owned(), handle);
-        Ok(())
+        Ok(None)
     }
 
     async fn stop(&self, guild_id: &str) -> botsu_core::Result<()> {
