@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/botsu-core", "crates/botsu-discord", "crates/botsu-fluxer", "crates/botsu"]
+# Throwaway experiments with their own Cargo.toml, lockfile and target dir.
+exclude = ["spikes"]
 
 [workspace.package]
 version = "0.1.0"

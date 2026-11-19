@@ -1,27 +1,48 @@
 # Phase 0 spikes
 
-Throwaway experiments that answer the open questions in docs/handover.md section 4. They are not
-workspace members; keep them out of the main build.
+Throwaway experiments that answer the open questions in docs/handover.md section 4 and
+docs/roadmap.md phase 0. Each is its own Cargo project (excluded from the workspace) with its own
+`target/`. Record results in the table below and in CLAUDE.md.
 
-| Question | How to answer | Result |
+| Question | How | Result |
 |---|---|---|
-| Can a bot account join Fluxer voice (LiveKit)? | Run fluxer-rust's own voice example against a test server (below). `!join <voice channel id>`, then `!play`. | _not yet tested_ |
-| Does a self-hosted Fluxer instance work with a bot? | Set `FLUXER_API_URL` and run botsu; `$ping`. | _not yet tested_ |
-| Slash commands on Fluxer? | fluxer-rust 0.2.1 has no interactions API. Check Fluxer's API docs for `/applications/{id}/commands`. | prefix-only for now |
-| Discord voice with DAVE (songbird) | Only when the Discord adapter starts. | deferred |
-| Hosting cost of self-hosted Fluxer + LiveKit (RAM, UDP ports) | Measure with `docker stats` once it runs on Unraid. | _not yet measured_ |
+| Can a bot play audio in a **Fluxer** voice channel (LiveKit)? | `fluxer-voice/` (below) | _not yet run_ |
+| Can a bot play audio in **Discord** voice with DAVE encryption (songbird 0.6.1)? | `discord-voice/` (below) | _not yet run_ |
+| Does Fluxer tell bots who is in which voice channel? | `fluxer-voice`: `!where`, and the log lines `GUILD_SYNC …` / `PASSIVE_UPDATES …` / `Voice state: …` | _not yet run_ |
+| Fluxer moderation APIs (bulk delete, bans, timeouts, roles) | Tested live during phase 4 | folded into phase 4 |
+| arm64 image possible? | webrtc-sys-build maps `aarch64` → prebuilt `linux-arm64` libwebrtc | yes, needs a native arm64 runner; not needed for Unraid |
+| Self-hosted Fluxer RAM, ports | `docker stats --no-stream` on Unraid | _not yet measured_ |
 
-## Fluxer voice spike
+## Running the voice spikes
 
-Copy fluxer-rust's source (it ships its voice example and a test mp3) and run the example:
+Both test bots log in with the tokens from the repo's `.env` and use the prefix `!`.
 
-```sh
-cp -r ~/.cargo/registry/src/*/fluxer-rust-0.2.1 spikes/fluxer-voice
-cd spikes/fluxer-voice
-FLUXER_TOKEN=... cargo run --example voice
-```
+1. **Stop botsu on Unraid** (Docker tab → botsu → Stop). The test bots use the same bot accounts;
+   two connections could clash, and botsu would also see the `!` commands.
+2. **ffmpeg**, once: `winget install Gyan.FFmpeg`, then open a new terminal. The spikes use it to
+   generate `spikes/test-tone.mp3` (10 s, 440 Hz) on first run; Fluxer playback also needs it.
+3. Join a voice channel yourself, then run one spike at a time:
 
-For a self-hosted instance, uncomment the `.api_url(...)` line in `examples/voice.rs`.
-ffmpeg must be on `PATH`. `spikes/fluxer-voice/` is a copy of a third-party crate; don't commit it.
+   ```powershell
+   cd spikes\fluxer-voice     # or spikes\discord-voice
+   cargo run
+   ```
 
-Record results in the table above and in CLAUDE.md.
+4. In a text channel of the same server:
+
+   | Command | |
+   |---|---|
+   | `!join` | joins **your** voice channel (`!join <channel id>` to pick one) |
+   | `!play` | plays the test tone (`!play <file>` for another file; on Fluxer also a URL) |
+   | `!stop` / `!leave` | stop playback / leave the channel |
+   | `!where` | who the bot can see in voice, for troubleshooting `!join` |
+
+5. Ctrl+C to stop the spike. **Start botsu on Unraid again.**
+
+**Pass:** the bot appears in your voice channel and you hear the tone clearly for 10 seconds.
+Copy the terminal output into the table above either way; on failure it says where it broke
+(join timeout, LiveKit connection, DAVE handshake, ffmpeg).
+
+More detail for Discord voice: `$env:RUST_LOG="info,songbird=debug"; cargo run`.
+If `!join` says it can't see you, leave and rejoin the voice channel (that sends a fresh voice
+state), then try again; on Fluxer, note whether `!where` was empty before that.
