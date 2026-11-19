@@ -152,11 +152,16 @@ fn translate(msg: Message) -> Option<IncomingMessage> {
 /// Connects to Fluxer and runs until a fatal error. fluxer-rust reconnects on
 /// transient failures by itself.
 pub async fn run(config: FluxerConfig, bot: Arc<Bot>) -> Result<(), Error> {
-    let api_url = resolve_api_url(&config.endpoint).await?;
+    let (api_url, webapp) = resolve_endpoints(&config.endpoint).await?;
     tracing::info!(%api_url, "using Fluxer API");
 
     let fluxer_chat = FluxerChat::new(&config.token, &api_url);
-    check_login(&fluxer_chat.http, &api_url).await?;
+    let bot_id = check_login(&fluxer_chat.http, &api_url).await?;
+    // On Fluxer the bot user's ID is the application ID.
+    tracing::info!(
+        "Fluxer invite link: {webapp}/oauth2/authorize?client_id={bot_id}&scope=bot&permissions={}",
+        botsu_core::INVITE_PERMISSIONS
+    );
 
     let chat: Arc<dyn ChatAdapter> = Arc::new(fluxer_chat);
     bot.register_chat(chat.clone());
@@ -167,11 +172,24 @@ pub async fn run(config: FluxerConfig, bot: Arc<Bot>) -> Result<(), Error> {
     client.start().await.map_err(err)
 }
 
-async fn resolve_api_url(endpoint: &FluxerEndpoint) -> Result<String, Error> {
+/// `(API base with /v1, web app address)`.
+async fn resolve_endpoints(endpoint: &FluxerEndpoint) -> Result<(String, String), Error> {
     match endpoint {
         FluxerEndpoint::Default => discover(DEFAULT_INSTANCE).await,
-        FluxerEndpoint::ApiUrl(url) => Ok(url.trim_end_matches('/').to_owned()),
         FluxerEndpoint::Instance(origin) => discover(origin).await,
+        FluxerEndpoint::ApiUrl(url) => {
+            let url = url.trim_end_matches('/').to_owned();
+            Ok((url.clone(), site_of(&url)))
+        }
+    }
+}
+
+/// `https://host[:port]/anything` → `https://host[:port]`.
+fn site_of(url: &str) -> String {
+    let scheme_end = url.find("://").map(|i| i + 3).unwrap_or(0);
+    match url[scheme_end..].find('/') {
+        Some(i) => url[..scheme_end + i].to_owned(),
+        None => url.to_owned(),
     }
 }
 
@@ -180,7 +198,7 @@ async fn resolve_api_url(endpoint: &FluxerEndpoint) -> Result<String, Error> {
 /// We fetch this ourselves rather than via fluxer-rust's `get_well_known_fluxer`:
 /// that one looks under the API path (`/api/.well-known/fluxer`), while instances
 /// serve it at the domain root, and its typed struct fails on any missing field.
-async fn discover(origin: &str) -> Result<String, Error> {
+async fn discover(origin: &str) -> Result<(String, String), Error> {
     let origin = origin.trim_end_matches('/');
     let url = format!("{origin}/.well-known/fluxer");
     let fail = |e: &dyn std::fmt::Display| {
@@ -218,7 +236,15 @@ async fn discover(origin: &str) -> Result<String, Error> {
         "Fluxer instance discovered"
     );
 
-    Ok(with_v1(base))
+    // The web app can live elsewhere than the discovery document (it doesn't on fluxer.app or a
+    // default self-hosted setup, but the document says so explicitly).
+    let webapp = endpoints["webapp"]
+        .as_str()
+        .filter(|s| s.starts_with("http"))
+        .unwrap_or(origin)
+        .trim_end_matches('/')
+        .to_owned();
+    Ok((with_v1(base), webapp))
 }
 
 /// The discovery document publishes the API base without the version segment.
@@ -233,19 +259,29 @@ fn with_v1(base: &str) -> String {
 
 /// Fails fast with a readable error if the token or API URL is wrong, instead
 /// of letting the gateway loop retry forever.
-async fn check_login(http: &Http, api_url: &str) -> Result<(), Error> {
+/// Returns the bot's user ID.
+async fn check_login(http: &Http, api_url: &str) -> Result<String, Error> {
     let me = http.get_me().await.map_err(|e| {
         err(format!(
             "login check failed against {api_url} ({e}); check FLUXER_TOKEN"
         ))
     })?;
     tracing::info!(user = %me.username, id = %me.id, "Fluxer token OK");
-    Ok(())
+    Ok(me.id)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::with_v1;
+    use super::{site_of, with_v1};
+
+    #[test]
+    fn site_of_api_url() {
+        assert_eq!(
+            site_of("https://fluxer.example.org/api/v1"),
+            "https://fluxer.example.org"
+        );
+        assert_eq!(site_of("http://192.0.2.10:8080"), "http://192.0.2.10:8080");
+    }
 
     #[test]
     fn appends_version_once() {

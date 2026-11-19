@@ -1,0 +1,20 @@
+# botsu with Docker Compose. Usage: docs/install-docker.md
+#
+#   docker compose up -d
+#   docker compose logs -f
+#
+# Settings: either fill in ./data/botsu.env (created on first start), or uncomment env_file
+# below and point it at your own file. Values in env_file win over data/botsu.env.
+services:
+  botsu:
+    image: caaarrrlll/botsu:latest
+    container_name: botsu
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    environment:
+      # The bot runs as this user and owns ./data. Set them to your own IDs (`id -u`, `id -g`).
+      PUID: "1000"
+      PGID: "1000"
+    # env_file:
+    #   - ./botsu.env

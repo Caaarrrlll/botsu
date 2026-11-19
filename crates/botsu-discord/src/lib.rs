@@ -120,6 +120,11 @@ impl EventHandler for Handler {
             guilds = ready.guilds.len(),
             "connected to Discord"
         );
+        tracing::info!(
+            "Discord invite link: https://discord.com/oauth2/authorize?client_id={}&scope=bot&permissions={}",
+            ready.application.id,
+            botsu_core::INVITE_PERMISSIONS
+        );
     }
 
     async fn message(&self, ctx: Context, msg: Message) {

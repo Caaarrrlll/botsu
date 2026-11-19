@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for all minor/patch bumps instead of one per crate.
+      rust-minor:
+        update-types: [minor, patch]
+    ignore:
+      # Pinned on purpose: fluxer-rust is 0.x, and livekit/libwebrtc must match the versions it
+      # was built against (an automatic bump broke the build once). Bump these by hand, test
+      # against a live Fluxer instance, and check CLAUDE.md first.
+      - dependency-name: fluxer-rust
+      - dependency-name: "livekit*"
+      - dependency-name: "webrtc-sys*"
+      - dependency-name: libwebrtc
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
