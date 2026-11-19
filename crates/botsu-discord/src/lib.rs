@@ -8,12 +8,12 @@ use std::sync::{Arc, Mutex};
 
 use botsu_core::voice::VoiceAdapter;
 use botsu_core::{
-    Author, Bot, Capabilities, ChatAdapter, Error, HistoryMessage, IncomingMessage, Platform,
-    RoleInfo,
+    Author, BanInfo, Bot, Capabilities, ChatAdapter, Error, HistoryMessage, IncomingMessage,
+    Platform, RoleInfo,
 };
 use serenity::all::{
-    ChannelId, Client, Context, EventHandler, GatewayIntents, GetMessages, Guild, GuildId, Http,
-    Message, MessageId, Ready, RoleId, UserId, VoiceState,
+    ChannelId, Client, Context, EditMember, EventHandler, GatewayIntents, GetMessages, Guild,
+    GuildId, Http, Message, MessageId, Ready, RoleId, Timestamp, UserId, VoiceState,
 };
 use serenity::async_trait;
 use songbird::input::core::io::ReadOnlySource;
@@ -107,6 +107,7 @@ impl ChatAdapter for DiscordChat {
                 id: r.id.to_string(),
                 name: r.name.clone(),
                 permissions: r.permissions.bits(),
+                position: i64::from(r.position),
             })
             .collect())
     }
@@ -204,6 +205,107 @@ impl ChatAdapter for DiscordChat {
         ChannelId::new(snowflake(channel_id)?)
             .delete_messages(&self.http, ids)
             .await
+            .map_err(err)
+    }
+
+    async fn bot_user_id(&self) -> botsu_core::Result<String> {
+        let me = self.http.get_current_user().await.map_err(err)?;
+        Ok(me.id.to_string())
+    }
+
+    async fn user_name(&self, user_id: &str) -> botsu_core::Result<String> {
+        let user = UserId::new(snowflake(user_id)?)
+            .to_user(&self.http)
+            .await
+            .map_err(err)?;
+        Ok(user.global_name.clone().unwrap_or(user.name))
+    }
+
+    async fn kick(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        reason: Option<&str>,
+    ) -> botsu_core::Result<()> {
+        self.http
+            .kick_member(
+                GuildId::new(snowflake(guild_id)?),
+                UserId::new(snowflake(user_id)?),
+                reason,
+            )
+            .await
+            .map_err(err)
+    }
+
+    async fn ban(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        reason: Option<&str>,
+        delete_message_days: u8,
+    ) -> botsu_core::Result<()> {
+        self.http
+            .ban_user(
+                GuildId::new(snowflake(guild_id)?),
+                UserId::new(snowflake(user_id)?),
+                delete_message_days.min(7),
+                reason,
+            )
+            .await
+            .map_err(err)
+    }
+
+    async fn unban(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        reason: Option<&str>,
+    ) -> botsu_core::Result<()> {
+        self.http
+            .remove_ban(
+                GuildId::new(snowflake(guild_id)?),
+                UserId::new(snowflake(user_id)?),
+                reason,
+            )
+            .await
+            .map_err(err)
+    }
+
+    async fn bans(&self, guild_id: &str) -> botsu_core::Result<Vec<BanInfo>> {
+        let bans = GuildId::new(snowflake(guild_id)?)
+            .bans(&self.http, None, None)
+            .await
+            .map_err(err)?;
+        Ok(bans
+            .into_iter()
+            .map(|b| BanInfo {
+                user_id: b.user.id.to_string(),
+                user_name: b.user.global_name.clone().unwrap_or(b.user.name),
+                reason: b.reason,
+            })
+            .collect())
+    }
+
+    async fn timeout(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        until: Option<i64>,
+        reason: Option<&str>,
+    ) -> botsu_core::Result<()> {
+        let mut edit = match until {
+            Some(t) => EditMember::new().disable_communication_until_datetime(
+                Timestamp::from_unix_timestamp(t).map_err(err)?,
+            ),
+            None => EditMember::new().enable_communication(),
+        };
+        if let Some(r) = reason {
+            edit = edit.audit_log_reason(r);
+        }
+        GuildId::new(snowflake(guild_id)?)
+            .edit_member(&self.http, UserId::new(snowflake(user_id)?), edit)
+            .await
+            .map(|_| ())
             .map_err(err)
     }
 }

@@ -61,6 +61,37 @@ const MIGRATIONS: &[&str] = &[
         role_id  TEXT NOT NULL,
         PRIMARY KEY (platform, guild_id, level, role_id)
     );",
+    // 4: moderation cases, temp-ban expiry, per-server settings (mod-log channel)
+    "CREATE TABLE mod_cases (
+        platform     TEXT NOT NULL,
+        guild_id     TEXT NOT NULL,
+        number       INTEGER NOT NULL,  -- case number, counted per server
+        action       TEXT NOT NULL,     -- 'warn' | 'kick' | 'ban' | 'tempban' | 'unban' | 'timeout' | 'untimeout'
+        target_id    TEXT NOT NULL,
+        moderator_id TEXT NOT NULL,     -- '' = botsu itself (temp-ban ended)
+        reason       TEXT,
+        created_at   INTEGER NOT NULL,
+        expires_at   INTEGER,           -- tempban / timeout end
+        revoked_at   INTEGER,           -- warnings removed with unwarn
+        PRIMARY KEY (platform, guild_id, number)
+    );
+    CREATE INDEX mod_cases_target ON mod_cases (platform, guild_id, target_id);
+    CREATE TABLE scheduled_unbans (
+        platform    TEXT NOT NULL,
+        guild_id    TEXT NOT NULL,
+        user_id     TEXT NOT NULL,
+        unban_at    INTEGER NOT NULL,
+        case_number INTEGER NOT NULL,   -- the tempban case
+        attempts    INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (platform, guild_id, user_id)
+    );
+    CREATE TABLE guild_settings (
+        platform TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        key      TEXT NOT NULL,         -- 'modlog_channel'
+        value    TEXT NOT NULL,
+        PRIMARY KEY (platform, guild_id, key)
+    );",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,6 +161,57 @@ pub struct NewSubscription<'a> {
     pub guild_id: Option<&'a str>,
     pub channel_id: &'a str,
     pub created_by: &'a str,
+}
+
+/// A moderation case.
+#[derive(Debug, Clone)]
+pub struct Case {
+    pub number: i64,
+    pub action: String,
+    pub target_id: String,
+    /// Empty when botsu did it by itself (a temp-ban ending).
+    pub moderator_id: String,
+    pub reason: Option<String>,
+    pub created_at: i64,
+    pub expires_at: Option<i64>,
+    pub revoked_at: Option<i64>,
+}
+
+pub struct NewCase<'a> {
+    pub platform: Platform,
+    pub guild_id: &'a str,
+    pub action: &'a str,
+    pub target_id: &'a str,
+    pub moderator_id: &'a str,
+    pub reason: Option<&'a str>,
+    pub expires_at: Option<i64>,
+}
+
+/// A temp-ban waiting to be lifted.
+#[derive(Debug, Clone)]
+pub struct ScheduledUnban {
+    pub platform: Platform,
+    pub guild_id: String,
+    pub user_id: String,
+    pub unban_at: i64,
+    pub case_number: i64,
+    pub attempts: i64,
+}
+
+const CASE_COLUMNS: &str =
+    "number, action, target_id, moderator_id, reason, created_at, expires_at, revoked_at";
+
+fn case_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Case> {
+    Ok(Case {
+        number: r.get(0)?,
+        action: r.get(1)?,
+        target_id: r.get(2)?,
+        moderator_id: r.get(3)?,
+        reason: r.get(4)?,
+        created_at: r.get(5)?,
+        expires_at: r.get(6)?,
+        revoked_at: r.get(7)?,
+    })
 }
 
 pub fn now() -> i64 {
@@ -387,6 +469,242 @@ impl Store {
         rows.collect()
     }
 
+    // --- moderation --------------------------------------------------------------------------
+
+    /// Records a case and returns its number (1, 2, ... per server).
+    pub fn add_case(&self, c: &NewCase<'_>) -> DbResult<i64> {
+        let conn = self.conn();
+        let p = platform_str(c.platform);
+        conn.execute(
+            "INSERT INTO mod_cases
+               (platform, guild_id, number, action, target_id, moderator_id, reason, created_at,
+                expires_at)
+             SELECT ?1, ?2, COALESCE(MAX(number), 0) + 1, ?3, ?4, ?5, ?6, ?7, ?8
+             FROM mod_cases WHERE platform = ?1 AND guild_id = ?2",
+            params![
+                p,
+                c.guild_id,
+                c.action,
+                c.target_id,
+                c.moderator_id,
+                c.reason,
+                now(),
+                c.expires_at
+            ],
+        )?;
+        conn.query_row(
+            "SELECT MAX(number) FROM mod_cases WHERE platform = ?1 AND guild_id = ?2",
+            params![p, c.guild_id],
+            |r| r.get(0),
+        )
+    }
+
+    pub fn case(&self, platform: Platform, guild_id: &str, number: i64) -> DbResult<Option<Case>> {
+        self.conn()
+            .query_row(
+                &format!(
+                    "SELECT {CASE_COLUMNS} FROM mod_cases
+                     WHERE platform = ?1 AND guild_id = ?2 AND number = ?3"
+                ),
+                params![platform_str(platform), guild_id, number],
+                case_row,
+            )
+            .optional()
+    }
+
+    pub fn set_case_reason(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        number: i64,
+        reason: &str,
+    ) -> DbResult<bool> {
+        let n = self.conn().execute(
+            "UPDATE mod_cases SET reason = ?4
+             WHERE platform = ?1 AND guild_id = ?2 AND number = ?3",
+            params![platform_str(platform), guild_id, number, reason],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// A user's cases in a server, newest first. `warnings_only`: warnings not removed.
+    pub fn cases_for(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        user_id: &str,
+        warnings_only: bool,
+    ) -> DbResult<Vec<Case>> {
+        let conn = self.conn();
+        let filter = if warnings_only {
+            "AND action = 'warn' AND revoked_at IS NULL"
+        } else {
+            ""
+        };
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {CASE_COLUMNS} FROM mod_cases
+             WHERE platform = ?1 AND guild_id = ?2 AND target_id = ?3 {filter}
+             ORDER BY number DESC"
+        ))?;
+        let rows = stmt.query_map(params![platform_str(platform), guild_id, user_id], case_row)?;
+        rows.collect()
+    }
+
+    /// Marks a warning as removed. False if the case isn't an active warning.
+    pub fn revoke_warning(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        number: i64,
+    ) -> DbResult<bool> {
+        let n = self.conn().execute(
+            "UPDATE mod_cases SET revoked_at = ?4
+             WHERE platform = ?1 AND guild_id = ?2 AND number = ?3
+               AND action = 'warn' AND revoked_at IS NULL",
+            params![platform_str(platform), guild_id, number, now()],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Schedules (or reschedules) lifting a temp-ban.
+    pub fn schedule_unban(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        user_id: &str,
+        unban_at: i64,
+        case_number: i64,
+    ) -> DbResult<()> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO scheduled_unbans
+               (platform, guild_id, user_id, unban_at, case_number, attempts)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0)",
+            params![
+                platform_str(platform),
+                guild_id,
+                user_id,
+                unban_at,
+                case_number
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Drops a scheduled unban (the user was unbanned, or banned for good). False if none.
+    pub fn cancel_unban(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        user_id: &str,
+    ) -> DbResult<bool> {
+        let n = self.conn().execute(
+            "DELETE FROM scheduled_unbans WHERE platform = ?1 AND guild_id = ?2 AND user_id = ?3",
+            params![platform_str(platform), guild_id, user_id],
+        )?;
+        Ok(n > 0)
+    }
+
+    pub fn scheduled_unban(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        user_id: &str,
+    ) -> DbResult<Option<i64>> {
+        self.conn()
+            .query_row(
+                "SELECT unban_at FROM scheduled_unbans
+                 WHERE platform = ?1 AND guild_id = ?2 AND user_id = ?3",
+                params![platform_str(platform), guild_id, user_id],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
+    /// Temp-bans whose time is up (`unban_at <= at`), oldest first.
+    pub fn due_unbans(&self, at: i64) -> DbResult<Vec<ScheduledUnban>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT platform, guild_id, user_id, unban_at, case_number, attempts
+             FROM scheduled_unbans WHERE unban_at <= ?1 ORDER BY unban_at",
+        )?;
+        let rows = stmt.query_map(params![at], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                ScheduledUnban {
+                    platform: Platform::Discord,
+                    guild_id: r.get(1)?,
+                    user_id: r.get(2)?,
+                    unban_at: r.get(3)?,
+                    case_number: r.get(4)?,
+                    attempts: r.get(5)?,
+                },
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (platform, mut u) = row?;
+            if let Some(p) = parse_platform(&platform) {
+                u.platform = p;
+                out.push(u);
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn note_unban_attempt(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        user_id: &str,
+    ) -> DbResult<()> {
+        self.conn().execute(
+            "UPDATE scheduled_unbans SET attempts = attempts + 1
+             WHERE platform = ?1 AND guild_id = ?2 AND user_id = ?3",
+            params![platform_str(platform), guild_id, user_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn guild_setting(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        key: &str,
+    ) -> DbResult<Option<String>> {
+        self.conn()
+            .query_row(
+                "SELECT value FROM guild_settings
+                 WHERE platform = ?1 AND guild_id = ?2 AND key = ?3",
+                params![platform_str(platform), guild_id, key],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
+    /// Sets a server setting; `None` removes it.
+    pub fn set_guild_setting(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        key: &str,
+        value: Option<&str>,
+    ) -> DbResult<()> {
+        let conn = self.conn();
+        let p = platform_str(platform);
+        match value {
+            Some(v) => conn.execute(
+                "INSERT OR REPLACE INTO guild_settings (platform, guild_id, key, value)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![p, guild_id, key, v],
+            )?,
+            None => conn.execute(
+                "DELETE FROM guild_settings WHERE platform = ?1 AND guild_id = ?2 AND key = ?3",
+                params![p, guild_id, key],
+            )?,
+        };
+        Ok(())
+    }
+
     pub fn remove_pending(&self, kind: AlertKind, item_id: &str) -> DbResult<()> {
         self.conn().execute(
             "DELETE FROM pending_items WHERE kind = ?1 AND item_id = ?2",
@@ -588,5 +906,130 @@ mod tests {
             store.last_live_at(AlertKind::Twitch, "42").unwrap(),
             Some(200)
         );
+    }
+
+    fn case<'a>(guild: &'a str, action: &'a str, target: &'a str) -> NewCase<'a> {
+        NewCase {
+            platform: Platform::Discord,
+            guild_id: guild,
+            action,
+            target_id: target,
+            moderator_id: "mod",
+            reason: Some("spam"),
+            expires_at: None,
+        }
+    }
+
+    #[test]
+    fn cases_are_numbered_per_server() {
+        let store = Store::open_in_memory().unwrap();
+        assert_eq!(store.add_case(&case("g1", "warn", "u1")).unwrap(), 1);
+        assert_eq!(store.add_case(&case("g1", "kick", "u1")).unwrap(), 2);
+        assert_eq!(store.add_case(&case("g2", "warn", "u1")).unwrap(), 1);
+        let mut fluxer = case("g1", "warn", "u1");
+        fluxer.platform = Platform::Fluxer;
+        assert_eq!(
+            store.add_case(&fluxer).unwrap(),
+            1,
+            "own count per platform"
+        );
+
+        let c = store.case(Platform::Discord, "g1", 2).unwrap().unwrap();
+        assert_eq!((c.action.as_str(), c.target_id.as_str()), ("kick", "u1"));
+        assert!(store.case(Platform::Discord, "g1", 3).unwrap().is_none());
+
+        assert!(store
+            .set_case_reason(Platform::Discord, "g1", 2, "flood")
+            .unwrap());
+        let c = store.case(Platform::Discord, "g1", 2).unwrap().unwrap();
+        assert_eq!(c.reason.as_deref(), Some("flood"));
+
+        let all = store
+            .cases_for(Platform::Discord, "g1", "u1", false)
+            .unwrap();
+        assert_eq!(all.iter().map(|c| c.number).collect::<Vec<_>>(), [2, 1]);
+    }
+
+    #[test]
+    fn warnings_can_be_revoked_once() {
+        let store = Store::open_in_memory().unwrap();
+        store.add_case(&case("g1", "warn", "u1")).unwrap();
+        store.add_case(&case("g1", "kick", "u1")).unwrap();
+        store.add_case(&case("g1", "warn", "u1")).unwrap();
+        let warns = |s: &Store| {
+            s.cases_for(Platform::Discord, "g1", "u1", true)
+                .unwrap()
+                .len()
+        };
+        assert_eq!(warns(&store), 2);
+        assert!(
+            !store.revoke_warning(Platform::Discord, "g1", 2).unwrap(),
+            "not a warning"
+        );
+        assert!(store.revoke_warning(Platform::Discord, "g1", 1).unwrap());
+        assert!(
+            !store.revoke_warning(Platform::Discord, "g1", 1).unwrap(),
+            "already removed"
+        );
+        assert_eq!(warns(&store), 1);
+    }
+
+    #[test]
+    fn scheduled_unbans() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .schedule_unban(Platform::Discord, "g1", "u1", 100, 1)
+            .unwrap();
+        store
+            .schedule_unban(Platform::Fluxer, "g1", "u2", 50, 2)
+            .unwrap();
+        store
+            .schedule_unban(Platform::Discord, "g1", "u3", 500, 3)
+            .unwrap();
+        // Rescheduling replaces.
+        store
+            .schedule_unban(Platform::Discord, "g1", "u3", 300, 4)
+            .unwrap();
+
+        let due = store.due_unbans(300).unwrap();
+        let users: Vec<_> = due.iter().map(|u| u.user_id.as_str()).collect();
+        assert_eq!(users, ["u2", "u1", "u3"]);
+        assert_eq!(due[0].platform, Platform::Fluxer);
+        assert_eq!(due[2].case_number, 4);
+
+        store
+            .note_unban_attempt(Platform::Discord, "g1", "u1")
+            .unwrap();
+        assert_eq!(store.due_unbans(100).unwrap()[1].attempts, 1);
+        assert!(store.cancel_unban(Platform::Discord, "g1", "u1").unwrap());
+        assert!(!store.cancel_unban(Platform::Discord, "g1", "u1").unwrap());
+        assert_eq!(
+            store
+                .scheduled_unban(Platform::Discord, "g1", "u3")
+                .unwrap(),
+            Some(300)
+        );
+        assert_eq!(store.due_unbans(299).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn guild_settings() {
+        let store = Store::open_in_memory().unwrap();
+        let get = |s: &Store| {
+            s.guild_setting(Platform::Discord, "g1", "modlog_channel")
+                .unwrap()
+        };
+        assert_eq!(get(&store), None);
+        store
+            .set_guild_setting(Platform::Discord, "g1", "modlog_channel", Some("c1"))
+            .unwrap();
+        store
+            .set_guild_setting(Platform::Discord, "g1", "modlog_channel", Some("c2"))
+            .unwrap();
+        assert_eq!(get(&store).as_deref(), Some("c2"));
+        store
+            .set_guild_setting(Platform::Discord, "g1", "modlog_channel", None)
+            .unwrap();
+        assert_eq!(get(&store), None);
     }
 }

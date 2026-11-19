@@ -240,6 +240,46 @@ for the bots already in your servers, add them to the bot's role.
 
 Fluxer's bulk-delete limits and role API are untested; note anything odd.
 
+## 7. Moderation (phase 5)
+
+### Commands
+
+```
+!set modlog <#channel>         ← server owner: where cases are posted (!set modlog off)
+!warn <@user> <reason>         ← mods; the reply pings the user
+!warnings [@user]              ← anyone: your own; mods: anyone's
+!unwarn <case number> [reason]
+!kick <@user> [reason]
+!ban <@user or ID> [0-7] [reason]      ← optional days of their messages to delete
+!tempban <@user> <duration> [reason]   ← 30m, 12h, 3d, 1w, 1d12h …
+!unban <user ID> [reason]
+!timeout <@user> <duration> [reason]   ← up to 28 days
+!untimeout <@user> [reason]
+!case <n>   !cases <@user>   !reason <n> <text>   !bans
+```
+
+The bot needs **Kick Members**, **Ban Members** and **Moderate Members** (Discord: "Timeout
+Members"), and its role must be above the people it acts on. The startup invite link now asks for
+them; for the bots already in your servers, add them to the bot's role. Use a test account (or a
+friend's alt) as the target.
+
+### Checklist
+
+| Test | Discord | Fluxer |
+|---|---|---|
+| `!set modlog #mod-log`; `!warn @test be nice` replies with case #1 and posts it in #mod-log (no ping there) | | |
+| `!warnings` as the test account shows its own warning; `!warnings @someone` is refused for them | | |
+| `!unwarn 1` removes it; `!warnings @test` shows none | | |
+| A mod can't `!kick` an admin, another mod, the owner, the bot, or themselves | | |
+| `!kick @test spam` works; the reason is in the server's audit log | | |
+| `!timeout @test 10m` mutes them; `!untimeout @test` lifts it | | |
+| `!ban <ID> 1 test` bans and deletes a day of their messages; `!bans` lists them; `!unban <ID>` | | |
+| `!tempban @test 2m test` → the ban is lifted about 2 minutes later, with an automatic unban case | | |
+| `!tempban @test 5m`, restart the container, wait: the ban is still lifted on time | | |
+| `!case 2`, `!cases @test`, `!reason 2 new text` (another mod's case: admins only) | | |
+
+Fluxer's moderation endpoints are untested against the instance; note anything odd.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |

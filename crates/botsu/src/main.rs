@@ -5,6 +5,10 @@ use std::time::Duration;
 
 use anyhow::Result;
 use botsu_core::alerts::{self, twitch::Twitch, youtube::YouTubeApi, TubeCommand, TwitchCommand};
+use botsu_core::moderation::{
+    self, BansCommand, CaseCommand, CasesCommand, ModCommand, ModTools, ReasonCommand,
+    UnwarnCommand, WarningsCommand,
+};
 use botsu_core::permissions::Permissions;
 use botsu_core::server::{AnnounceCommand, CleanupCommand, RoleCommand, SetCommand};
 use botsu_core::storage::Store;
@@ -77,12 +81,23 @@ async fn main() -> Result<()> {
     };
 
     let mut bot = Bot::new(config.prefix.clone(), config.owners);
-    bot.set_permissions(Arc::new(Permissions::new(store.clone())));
+    let permissions = Arc::new(Permissions::new(store.clone()));
+    bot.set_permissions(permissions.clone());
     bot.register(SetCommand::new(store.clone()));
     bot.register(CleanupCommand);
     bot.register(RoleCommand::add());
     bot.register(RoleCommand::remove());
     bot.register(AnnounceCommand);
+    let mod_tools = ModTools::new(store.clone(), permissions);
+    for command in ModCommand::all(&mod_tools) {
+        bot.register(command);
+    }
+    bot.register(CaseCommand(mod_tools.clone()));
+    bot.register(CasesCommand(mod_tools.clone()));
+    bot.register(ReasonCommand(mod_tools.clone()));
+    bot.register(WarningsCommand(mod_tools.clone()));
+    bot.register(UnwarnCommand(mod_tools.clone()));
+    bot.register(BansCommand(mod_tools.clone()));
     if !bot.has_owners() {
         tracing::warn!("BOTSU_OWNERS is empty: nobody can run tube/twitch import or tube shorts. Run one to see your user ID.");
     }
@@ -118,6 +133,7 @@ async fn main() -> Result<()> {
         adapters.spawn(async move { ("fluxer", botsu_fluxer::run(fluxer, bot, voice).await) });
     }
 
+    moderation::spawn_unban_scheduler(bot.clone(), mod_tools);
     alerts::spawn_pollers(bot.clone(), store, http, youtube_api, twitch, config.alerts);
 
     tokio::select! {
