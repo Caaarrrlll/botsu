@@ -42,13 +42,14 @@ Phase 0 has no strict order relative to 1: run the spikes early because their an
 
 ## Phase 0: Spikes
 
-Throwaway experiments in `spikes/` (see [spikes/README.md](../spikes/README.md)). Record results there and in `CLAUDE.md`.
+Checklist and results in [spikes/README.md](../spikes/README.md); also record results in `CLAUDE.md`.
 
-- [ ] **Self-hosted Fluxer on Unraid.** Bring up the Docker Compose stack; measure RAM with `docker stats`; note which ports (LiveKit UDP range) must be forwarded.
-- [ ] **Fluxer bot voice.** Run fluxer-rust's `voice` example: a bot joins a voice channel and plays a file through LiveKit. *If this fails, music on Fluxer is off the table until Fluxer supports it.*
-- [ ] **Discord voice + DAVE.** Join and play a file with songbird. Confirm the songbird version in use supports Discord's DAVE end-to-end voice encryption.
-- [ ] **Fluxer API coverage.** Check bulk delete, bans, member timeouts (`communication_disabled_until`) and role edits against a real instance; fluxer-rust has methods for all of them but the server behavior is untested.
-- [ ] **Multi-arch libwebrtc.** Check whether LiveKit ships a prebuilt libwebrtc for linux-arm64 (decides whether phase 3 can publish an arm64 image).
+- [x] **Self-hosted Fluxer on Unraid.** Running; `/.well-known/fluxer` reports `voice_enabled=true`, `self_hosted=true`. Still to note: RAM (`docker stats`) and which LiveKit UDP ports are forwarded.
+- [ ] **Fluxer bot voice.** Built into botsu as `!voice` (bot owners): joins the caller's voice channel via LiveKit and plays a test tone. Run it on the deployed container. *If this fails, music on Fluxer is off the table until Fluxer supports it.*
+- [ ] **Discord voice + DAVE.** Same `!voice` command, via songbird 0.6.1 (ships DAVE through its `davey` dependency).
+- [ ] **Voice states:** `!voice join` without a channel needs the platform to tell bots who is in voice. Discord: GUILD_CREATE + VOICE_STATE_UPDATE. Fluxer: GUILD_SYNC / PASSIVE_UPDATES snapshots + VOICE_STATE_UPDATE (fluxer-rust's GUILD_CREATE model drops them).
+- [ ] **Fluxer API coverage.** Bulk delete, bans, member timeouts (`communication_disabled_until`) and role edits against the real instance: folded into phase 4, which uses them.
+- [x] **Multi-arch libwebrtc.** webrtc-sys-build maps `aarch64` to a prebuilt `linux-arm64` libwebrtc, so an arm64 image is possible with a native arm64 runner. Not needed for Unraid.
 
 **Done when:** each item above has a written answer.
 

@@ -9,5 +9,6 @@ publish.workspace = true
 [dependencies]
 botsu-core.workspace = true
 serenity.workspace = true
+songbird.workspace = true
 tokio.workspace = true
 tracing.workspace = true
