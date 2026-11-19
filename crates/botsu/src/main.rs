@@ -127,8 +127,9 @@ async fn load_config() -> Result<config::Config> {
             }
             tracing::warn!(
                 file = %settings.display(),
-                "no platform configured: put DISCORD_TOKEN and/or FLUXER_TOKEN in this file \
-                 (or the environment). Checking again every 30 seconds"
+                "no platform configured: set DISCORD_TOKEN and/or FLUXER_TOKEN in this file, \
+                 or as environment variables (Unraid: the template's token fields, then Apply). \
+                 Checking the file again every 30 seconds"
             );
             told = true;
         }

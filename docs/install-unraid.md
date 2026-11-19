@@ -18,14 +18,25 @@ it. Defaults: data in `/mnt/user/appdata/botsu`, running as `nobody:users` (99:1
 
 ## 2. Fill in the settings
 
-On first start the bot creates `/mnt/user/appdata/botsu/botsu.env` and logs:
+Two ways; use either or mix them. **Template fields win**, and a blank field falls back to the
+settings file.
+
+**A. In the template.** The add/edit page has fields for the tokens, Fluxer address, prefix,
+owners and YouTube/Twitch keys (poll intervals and log level under **Show more settings**). Fill
+in at least the Discord or Fluxer token and click **Apply**. Token and key fields are masked in
+the page, but Unraid stores template values in plain text on the flash drive
+(`/boot/config/plugins/dockerMan/templates-user/my-botsu.xml`). Changing a field later means
+**Apply** again, which recreates the container.
+
+**B. In the settings file.** If no token is set anywhere, the bot creates
+`/mnt/user/appdata/botsu/botsu.env` and logs:
 
 ```
 WARN botsu: created a settings file file=/data/botsu.env
 WARN botsu: no platform configured: put DISCORD_TOKEN and/or FLUXER_TOKEN in this file ...
 ```
 
-Edit that file, over the network share (`\\<unraid-host>\appdata\botsu\botsu.env`) or in the terminal
+Edit that file over the network share (`\\<unraid-host>\appdata\botsu\botsu.env`) or in the terminal
 (`nano /mnt/user/appdata/botsu/botsu.env`). Every setting is explained in the file; the important
 ones:
 
