@@ -81,7 +81,7 @@ Unraid's **Docker** tab (start/stop/logs work there). Created this way it has no
 settings are changed by editing the env file and running this step again.
 
 **Or with the template** (adds the icon and an Edit page in the Docker tab): copy
-[`deploy/unraid/botsu.xml`](../deploy/unraid/botsu.xml) to
+[`deploy/unraid/my-botsu.xml`](../deploy/unraid/my-botsu.xml) to
 `/boot/config/plugins/dockerMan/templates-user/my-botsu.xml`, then **Docker → Add Container →
 Template: botsu** → **Apply**. It sets the same `--user`, `--env-file` and `/data` mapping as the
 command above. The template uses the local image `botsu:latest` from step 3; if Unraid tries to
