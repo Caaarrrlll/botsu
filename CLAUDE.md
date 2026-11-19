@@ -68,7 +68,9 @@ several Discord servers, following docs/testing.md. Red still runs on those Disc
 botsu is definitely replacing it (phase 7). Phase 0 spikes are still open. Keep the checkboxes in
 docs/roadmap.md up to date as work lands.
 
-## fluxer-rust 0.2.1 notes (pinned with `=`; read its source in ~/.cargo/registry before bumping)
+## fluxer-rust 0.2.1 notes (pinned with `=`; vendored with patches in vendor/fluxer-rust, see vendor/README.md)
+- Patches: `Guild.voice_states` (GUILD_CREATE), `FluxerVoiceConnection::play_input` (ffmpeg with reconnect
+  flags, stdin input, errors returned). Before bumping, port these or drop them if upstream has them.
 - No interactions/slash commands: prefix commands only on Fluxer.
 - API URL comes from discovery: `<instance>/.well-known/fluxer` (domain root) → `endpoints.api_public`
   + `/v1`. botsu fetches it itself (`discover` in botsu-fluxer) because fluxer-rust's

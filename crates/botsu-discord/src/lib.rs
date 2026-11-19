@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
-use botsu_core::voice::VoiceAdapter;
+use botsu_core::voice::{AudioInput, VoiceAdapter};
 use botsu_core::{
     Author, BanInfo, Bot, Capabilities, ChatAdapter, Error, HistoryMessage, IncomingMessage,
     Platform, RoleInfo,
@@ -321,6 +321,9 @@ pub struct DiscordVoice {
     states: Mutex<HashMap<(u64, u64), u64>>,
     /// guild → the track playing (or last played) there, for the idle timer.
     tracks: Mutex<HashMap<u64, TrackHandle>>,
+    /// REST client, set once connected: asks Discord directly when the gateway's voice states
+    /// don't know where a user is.
+    http: std::sync::OnceLock<Arc<Http>>,
 }
 
 impl DiscordVoice {
@@ -329,6 +332,7 @@ impl DiscordVoice {
             songbird: Songbird::serenity(),
             states: Mutex::new(HashMap::new()),
             tracks: Mutex::new(HashMap::new()),
+            http: std::sync::OnceLock::new(),
         })
     }
 
@@ -351,9 +355,13 @@ impl DiscordVoice {
 
 /// ffmpeg decodes anything (file or URL) to 48 kHz stereo f32 PCM, which songbird plays as raw
 /// audio, so no extra decoders are compiled in. Network inputs get reconnect flags.
-fn ffmpeg_input(source: &str) -> botsu_core::Result<Input> {
+fn ffmpeg_input(input: AudioInput) -> botsu_core::Result<Input> {
     let mut cmd = std::process::Command::new("ffmpeg");
     cmd.args(["-hide_banner", "-loglevel", "error"]);
+    let (source, stdin) = match input {
+        AudioInput::Path(p) => (p, Stdio::null()),
+        AudioInput::Pipe(s) => ("pipe:0".to_owned(), s),
+    };
     if source.starts_with("http://") || source.starts_with("https://") {
         cmd.args([
             "-reconnect",
@@ -366,9 +374,9 @@ fn ffmpeg_input(source: &str) -> botsu_core::Result<Input> {
     }
     let child = cmd
         .args([
-            "-i", source, "-f", "f32le", "-ar", "48000", "-ac", "2", "pipe:1",
+            "-i", &source, "-f", "f32le", "-ar", "48000", "-ac", "2", "pipe:1",
         ])
-        .stdin(Stdio::null())
+        .stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
@@ -384,8 +392,25 @@ impl VoiceAdapter for DiscordVoice {
     }
 
     async fn user_channel(&self, guild_id: &str, user_id: &str) -> Option<String> {
-        let key = (guild_id.parse().ok()?, user_id.parse().ok()?);
-        self.states().get(&key).map(u64::to_string)
+        let key: (u64, u64) = (guild_id.parse().ok()?, user_id.parse().ok()?);
+        if let Some(c) = self.states().get(&key) {
+            return Some(c.to_string());
+        }
+        // Not seen on the gateway (for example already in voice when the bot started): ask.
+        let http = self.http.get()?;
+        let guild = GuildId::new(snowflake(guild_id).ok()?);
+        let user = UserId::new(snowflake(user_id).ok()?);
+        match http.get_user_voice_state(guild, user).await {
+            Ok(vs) => {
+                let channel = vs.channel_id?;
+                self.set_state(guild, user, Some(channel));
+                Some(channel.to_string())
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, guild_id, user_id, "no voice state from Discord");
+                None
+            }
+        }
     }
 
     async fn voice_members(&self, guild_id: &str) -> Vec<(String, String)> {
@@ -409,12 +434,12 @@ impl VoiceAdapter for DiscordVoice {
             .map_err(|e| err(format!("joining voice failed: {e}")))
     }
 
-    async fn play(&self, guild_id: &str, source: &str) -> botsu_core::Result<Option<String>> {
+    async fn play(&self, guild_id: &str, input: AudioInput) -> botsu_core::Result<Option<String>> {
         let call = self
             .songbird
             .get(GuildId::new(snowflake(guild_id)?))
             .ok_or_else(|| Error::Usage("I'm not in a voice channel; join first.".into()))?;
-        let input = ffmpeg_input(source)?;
+        let input = ffmpeg_input(input)?;
         let (track, channel) = {
             let mut call = call.lock().await;
             (call.play_only_input(input), call.current_channel())
@@ -492,6 +517,7 @@ struct Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn guild_create(&self, _ctx: Context, guild: Guild, _is_new: Option<bool>) {
+        tracing::debug!(guild = %guild.id, voice_states = guild.voice_states.len(), "Discord GUILD_CREATE");
         let mut states = self.voice.states();
         states.retain(|(g, _), _| *g != guild.id.get());
         for (user, vs) in &guild.voice_states {
@@ -507,7 +533,8 @@ impl EventHandler for Handler {
         }
     }
 
-    async fn ready(&self, _ctx: Context, ready: Ready) {
+    async fn ready(&self, ctx: Context, ready: Ready) {
+        let _ = self.voice.http.set(ctx.http.clone());
         tracing::info!(
             user = %ready.user.name,
             guilds = ready.guilds.len(),

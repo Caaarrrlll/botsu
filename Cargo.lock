@@ -1122,8 +1122,6 @@ dependencies = [
 [[package]]
 name = "fluxer-rust"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36813c0ca0f05f75dc734c6e9fd745c68efbf1b8e34744a43fdad541fe5852ba"
 dependencies = [
  "async-trait",
  "futures",

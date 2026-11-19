@@ -1,8 +1,10 @@
 //! Music (phase 6): a queue per server, played through the platform's [`VoiceAdapter`].
 //!
 //! `music play <search or link>` looks the track up with yt-dlp (title, length, page URL) and
-//! queues it. A player task per server takes tracks off the queue, resolves the page URL to a
-//! stream URL just before playing (they expire), plays it, and waits until it ends or is skipped.
+//! queues it. A player task per server takes tracks off the queue, starts `yt-dlp -o -` on the
+//! page URL (yt-dlp fetches the audio and deals with YouTube's checks; bare stream URLs handed to
+//! ffmpeg are often refused), pipes that into the adapter's ffmpeg, and waits until the track
+//! ends or is skipped.
 //! The idle timer in `voice.rs` leaves the channel after 10 minutes without sound.
 //!
 //! Anyone in the bot's voice channel can control the queue; mods can from anywhere. The voice
@@ -19,7 +21,7 @@ use crate::adapter::{ChatAdapter, Platform};
 use crate::command::{Command, CommandContext, Group};
 use crate::error::{Error, Result};
 use crate::permissions::Level;
-use crate::voice::{spawn_idle_watch, test_tone, VoiceAdapter};
+use crate::voice::{spawn_idle_watch, test_tone, AudioInput, VoiceAdapter};
 use crate::ytdlp::{is_url, YtDlp};
 
 /// Most tracks taken from one playlist link, and most queued per server.
@@ -181,15 +183,17 @@ impl Music {
                 self.clear(&key);
                 return;
             }
-            let stream = match self.ytdlp.stream_url(&track.url).await {
-                Ok(u) => u,
+            // yt-dlp downloads, ffmpeg (in the adapter) decodes from its output. Dropping
+            // `download` kills yt-dlp.
+            let (download, stream) = match self.ytdlp.open_stream(&track.url).await {
+                Ok(s) => s,
                 Err(e) => {
                     tracing::info!(error = %e, url = %track.url, "couldn't resolve a track");
                     say(format!("Skipping {}: {e}", describe(&track))).await;
                     continue;
                 }
             };
-            if let Err(e) = voice.play(&guild, &stream).await {
+            if let Err(e) = voice.play(&guild, AudioInput::Pipe(stream)).await {
                 tracing::info!(error = %e, url = %track.url, "couldn't play a track");
                 say(format!("Skipping {}: {e}", describe(&track))).await;
                 continue;
@@ -219,6 +223,7 @@ impl Music {
                     break;
                 }
             }
+            drop(download);
         }
     }
 
@@ -620,7 +625,10 @@ impl Command for MusicCommand {
                 };
                 // Bypasses the queue: anything queued is cleared.
                 self.music.clear(&here.key);
-                let note = here.voice.play(&here.guild, &source).await?;
+                let note = here
+                    .voice
+                    .play(&here.guild, AudioInput::Path(source))
+                    .await?;
                 let mut reply = if arg.is_empty() {
                     "Playing the test tone (10 s, 440 Hz).".to_owned()
                 } else {

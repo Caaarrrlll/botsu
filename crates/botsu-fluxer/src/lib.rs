@@ -7,15 +7,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use botsu_core::voice::VoiceAdapter;
+use botsu_core::voice::{AudioInput, VoiceAdapter};
 use botsu_core::{
     Author, BanInfo, Bot, Capabilities, ChatAdapter, Error, HistoryMessage, IncomingMessage,
     Platform, RoleInfo,
 };
 use fluxer::http::Http;
 use fluxer::prelude::{
-    Client, Context, EventHandler, FluxerVoiceConnection, GetMessagesQuery, GuildSync, Message,
-    PassiveUpdates, Ready, VoiceStateUpdate,
+    Client, Context, EventHandler, FluxerVoiceConnection, GetMessagesQuery, Guild, GuildSync,
+    Message, PassiveUpdates, Ready, VoiceStateUpdate,
 };
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -397,8 +397,13 @@ impl FluxerVoice {
         }
     }
 
-    fn snapshot(&self, source: &str, guild: &str, states: &[serde_json::Value]) {
+    /// Records voice states from a guild payload. `full`: the payload lists everyone in voice
+    /// (GUILD_CREATE, GUILD_SYNC), so earlier entries for that server are dropped first.
+    fn snapshot(&self, source: &str, guild: &str, states: &[serde_json::Value], full: bool) {
         let mut map = self.states();
+        if full {
+            map.retain(|(g, _), _| g != guild);
+        }
         for vs in states {
             if let (Some(user), Some(channel)) = (vs["user_id"].as_str(), vs["channel_id"].as_str())
             {
@@ -445,23 +450,48 @@ impl VoiceAdapter for FluxerVoice {
         Ok(())
     }
 
-    async fn play(&self, guild_id: &str, source: &str) -> botsu_core::Result<Option<String>> {
-        let ctx = self.context()?;
-        let conns = self.conns.lock().await;
-        let conn = conns
-            .get(guild_id)
-            .ok_or_else(|| Error::Usage("I'm not in a voice channel; join first.".into()))?;
+    async fn play(&self, guild_id: &str, input: AudioInput) -> botsu_core::Result<Option<String>> {
+        let (source, stdin) = match input {
+            AudioInput::Path(p) => (p, None),
+            AudioInput::Pipe(s) => ("pipe:0".to_owned(), Some(s)),
+        };
         self.stop_playback(guild_id);
-        // fluxer-rust posts ffmpeg errors to a text channel; we have none here, so that post just
-        // fails quietly. botsu's own pipeline (phase 6) will report errors properly.
-        let handle = conn
-            .play_music(source, ctx.http.clone(), String::new())
-            .await
-            .map_err(|e| err(format!("playing failed: {e}")))?;
+        let mut task = {
+            let conns = self.conns.lock().await;
+            let conn = conns
+                .get(guild_id)
+                .ok_or_else(|| Error::Usage("I'm not in a voice channel; join first.".into()))?;
+            // botsu's patched player (vendor/fluxer-rust): reconnect flags, stdin input, errors
+            // returned instead of posted to a channel.
+            conn.play_input(&source, stdin)
+                .map_err(|e| err(format!("playing failed: {e}")))?
+        };
         self.playback
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(guild_id.to_owned(), handle);
+            .insert(guild_id.to_owned(), task.abort_handle());
+        // An input that fails right away (bad link, download refused) fails here.
+        tokio::select! {
+            done = &mut task => {
+                return match done {
+                    Ok(Ok(())) => Ok(None),
+                    Ok(Err(e)) => Err(err(e)),
+                    Err(e) if e.is_cancelled() => Ok(None),
+                    Err(e) => Err(err(e)),
+                };
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => {}
+        }
+        let guild = guild_id.to_owned();
+        tokio::spawn(async move {
+            match task.await {
+                Ok(Err(e)) => tracing::warn!(guild, error = %e, "Fluxer playback failed"),
+                Err(e) if !e.is_cancelled() => {
+                    tracing::warn!(guild, error = %e, "Fluxer playback panicked")
+                }
+                _ => {}
+            }
+        });
         Ok(None)
     }
 
@@ -506,11 +536,22 @@ impl EventHandler for Handler {
         *self.voice.ctx.lock().unwrap_or_else(|p| p.into_inner()) = Some(ctx);
     }
 
+    async fn on_guild_create(&self, _ctx: Context, guild: Guild) {
+        // voice_states comes from botsu's fluxer-rust patch (vendor/README.md).
+        self.voice.snapshot(
+            "GUILD_CREATE",
+            &guild.id,
+            &guild.voice_states.unwrap_or_default(),
+            true,
+        );
+    }
+
     async fn on_guild_sync(&self, _ctx: Context, sync: GuildSync) {
         self.voice.snapshot(
             "GUILD_SYNC",
             &sync.id,
             &sync.voice_states.unwrap_or_default(),
+            true,
         );
     }
 
@@ -519,6 +560,7 @@ impl EventHandler for Handler {
             "PASSIVE_UPDATES",
             &p.guild_id,
             &p.voice_states.unwrap_or_default(),
+            false,
         );
     }
 

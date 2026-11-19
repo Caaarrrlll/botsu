@@ -163,7 +163,7 @@ search/URL ──► yt-dlp (subprocess) ──► stream URL ──► ffmpeg �
 - [ ] Live test on Discord and Fluxer: checklist in [testing.md](testing.md) section 8.
 - [ ] Optional cookies file in `/data` for YouTube anti-bot checks (only if YouTube starts refusing the server's IP).
 - [x] **Discord voice:** songbird, with DAVE confirmed in phase 0.
-- [ ] **Fluxer voice:** uses fluxer-rust's `play_music` for now. Its hardcoded ffmpeg arguments have no reconnect flags, so long tracks may cut off on a network hiccup; if they do, publish our own audio track on `conn.room` (or fork the crate).
+- [x] **Fluxer voice:** botsu's patched fluxer-rust (`vendor/`) adds `play_input`: ffmpeg with reconnect flags, reading yt-dlp's output from stdin, errors returned to botsu instead of posted to a channel. Both platforms now pipe `yt-dlp -o -` into ffmpeg.
 - [x] Docker image ships Deno (yt-dlp downloads itself); the native Linux guide lists ffmpeg and Deno.
 - [ ] Measure memory while playing on both platforms; compare with the handover's Lavalink figures.
 

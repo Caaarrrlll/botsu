@@ -11,6 +11,14 @@ use async_trait::async_trait;
 use crate::adapter::Platform;
 use crate::error::{Error, Result};
 
+/// What to play. Both platforms decode it with ffmpeg.
+pub enum AudioInput {
+    /// A file path or URL that ffmpeg opens itself.
+    Path(String),
+    /// Audio on ffmpeg's stdin, for example from `yt-dlp -o -`.
+    Pipe(std::process::Stdio),
+}
+
 /// What the core needs from a platform's voice support. All IDs are strings, as elsewhere.
 #[async_trait]
 pub trait VoiceAdapter: Send + Sync {
@@ -24,9 +32,9 @@ pub trait VoiceAdapter: Send + Sync {
 
     async fn join(&self, guild_id: &str, channel_id: &str) -> Result<()>;
 
-    /// Plays `source` (a file path or URL; anything ffmpeg reads), replacing what's playing.
-    /// May return a diagnostic note for the user (for example what the audio engine reports).
-    async fn play(&self, guild_id: &str, source: &str) -> Result<Option<String>>;
+    /// Plays `input`, replacing what's playing. Returns once playback has started (an input
+    /// that fails right away is an error). May return a diagnostic note for the user.
+    async fn play(&self, guild_id: &str, input: AudioInput) -> Result<Option<String>>;
 
     async fn stop(&self, guild_id: &str) -> Result<()>;
 
@@ -132,7 +140,7 @@ mod tests {
         async fn join(&self, _: &str, _: &str) -> Result<()> {
             Ok(())
         }
-        async fn play(&self, _: &str, _: &str) -> Result<Option<String>> {
+        async fn play(&self, _: &str, _: AudioInput) -> Result<Option<String>> {
             Ok(None)
         }
         async fn stop(&self, _: &str) -> Result<()> {
