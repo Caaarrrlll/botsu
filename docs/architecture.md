@@ -89,8 +89,9 @@ desktop libraries.
 `music.rs`: a `Guild` per (platform, server) with a queue, the current track, the text channel
 for "now playing" and a player task. `music play` looks the query up with yt-dlp
 (`--flat-playlist -J`: title, length, page URL; `ytsearch1:` for words) and queues it. The player
-resolves the page URL to a stream URL (`-f bestaudio/best -g`) only when the track starts,
-calls `VoiceAdapter::play`, then polls `is_playing` every second (after a 5 s grace) until it ends
+starts `yt-dlp -f bestaudio/best -o -` when the track starts and pipes it into the adapter's
+ffmpeg (`AudioInput::Pipe`): yt-dlp does the fetching, since YouTube often refuses bare stream URLs
+handed to ffmpeg. It then then polls `is_playing` every second (after a 5 s grace) until it ends
 or a skip (`Notify`, new per player task) arrives. Nothing is stored in the database; a restart
 empties queues.
 

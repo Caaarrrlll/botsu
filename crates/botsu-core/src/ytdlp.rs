@@ -168,23 +168,54 @@ impl YtDlp {
         parse_lookup(&out)
     }
 
-    /// A direct, short-lived audio stream URL for a page URL.
-    pub async fn stream_url(&self, page_url: &str) -> Result<String> {
-        let out = self
-            .run(&[
+    /// Starts downloading a page's audio to stdout (`-o -`). Returns the process (kill it to
+    /// stop) and its stdout, to hand to ffmpeg as stdin. yt-dlp does the fetching, so it deals
+    /// with YouTube's headers and checks; a bare stream URL given to ffmpeg is often refused.
+    pub async fn open_stream(
+        &self,
+        page_url: &str,
+    ) -> Result<(tokio::process::Child, std::process::Stdio)> {
+        self.ensure_installed().await?;
+        let mut child = tokio::process::Command::new(&self.path)
+            .args([
+                "--no-warnings",
+                "--ignore-config",
+                "-q",
                 "-f",
                 "bestaudio/best",
                 "--no-playlist",
-                "-g",
+                "--no-part",
+                "-o",
+                "-",
                 "--",
                 page_url,
             ])
-            .await?;
-        out.lines()
-            .map(str::trim)
-            .find(|l| l.starts_with("http"))
-            .map(str::to_owned)
-            .ok_or_else(|| Error::Internal("yt-dlp returned no stream URL".into()))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| {
+                Error::internal(&format!("running yt-dlp ({})", self.path.display()), e)
+            })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| Error::Internal("yt-dlp: no stdout".into()))?;
+        if let Some(stderr) = child.stderr.take() {
+            let url = page_url.to_owned();
+            tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                let mut lines = tokio::io::BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    tracing::warn!(%url, "yt-dlp: {line}");
+                }
+            });
+        }
+        let stdio: Stdio = stdout
+            .try_into()
+            .map_err(|e| Error::internal("connecting yt-dlp to ffmpeg", e))?;
+        Ok((child, stdio))
     }
 
     async fn run(&self, args: &[&str]) -> Result<String> {
