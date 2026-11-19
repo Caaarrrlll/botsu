@@ -20,7 +20,11 @@ cookies.txt
 # Third-party code copied in for phase 0 spikes (see spikes/README.md).
 /spikes/fluxer-voice/
 
-# Editors and OS.
+# Editors and OS. Shared VS Code run/debug setup is committed; personal settings aren't.
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 .idea/
 *.swp
 .DS_Store

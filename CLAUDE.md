@@ -23,7 +23,8 @@ Replaces a Red-DiscordBot instance ("botsu!", prefix `$`). Background: docs/hand
 - `spikes/`: throwaway experiments (phase 0). Not workspace members.
 
 ## Current phase
-Phase 1: code done for both adapters; live testing on the user's self-hosted Fluxer (Unraid) and
+Phase 1: `!ping` works live on Discord and the user's self-hosted Fluxer (2026-11-19). Remaining: Docker
+image build + Unraid run, rest of the testing checklist. Test targets: self-hosted Fluxer (Unraid) and
 several Discord servers, following docs/testing.md. Red still runs on those Discord servers with
 `$`, so botsu runs with `BOTSU_PREFIX=!` (code default stays `$`). Red is not to be changed until
 botsu is definitely replacing it (phase 7). Phase 0 spikes are still open. Keep the checkboxes in
@@ -31,6 +32,12 @@ docs/roadmap.md up to date as work lands.
 
 ## fluxer-rust 0.2.1 notes (pinned with `=`; read its source in ~/.cargo/registry before bumping)
 - No interactions/slash commands: prefix commands only on Fluxer.
+- API URL comes from discovery: `<instance>/.well-known/fluxer` (domain root) → `endpoints.api_public`
+  + `/v1`. botsu fetches it itself (`discover` in botsu-fluxer) because fluxer-rust's
+  `get_well_known_fluxer` looks under `/api/` and its typed struct is brittle. fluxer-rust's
+  built-in default `api.fluxer.app/v1` is outdated (now `fluxer.com/api/v1`); don't rely on it.
+- Bot invites: OAuth2 `<instance>/oauth2/authorize?client_id=..&scope=bot&permissions=..`
+  (docs.fluxer.com/http-api/oauth2). Fluxer docs moved from docs.fluxer.app to docs.fluxer.com.
 - `Client::start` reconnects by itself; it logs with `eprintln!`, not `tracing`.
 - Voice: `ctx.join_voice` gives a LiveKit `FluxerVoiceConnection`. Its `play_music` hardcodes the
   ffmpeg args (no `-reconnect` flags) and the `audio_source` is private, so the phase 6 music
@@ -40,6 +47,9 @@ docs/roadmap.md up to date as work lands.
 
 ## Conventions
 - Secrets only in env vars (env file on the server, `--env-file`); never commit tokens. `.env.example` lists them.
+- Keep `.env.example` in sync with every key in the user's `.env` (and any new env var the code reads),
+  with a comment saying what it's for. Never read `.env` values; compare key names only.
+- Run locally: VS Code launch configs `botsu (debug)` / `botsu (release)` (CodeLLDB) or `scripts/run.ps1 [-Release]`.
 - Deploys as a Docker container on Unraid (LF line endings, enforced by `.gitattributes`).
 - yt-dlp must be updatable without an image rebuild; resolve stream URLs at play time; run it as a subprocess.
 - Adapter trait methods are opt-in: default bodies return `Error::Unsupported`.

@@ -197,6 +197,7 @@ dependencies = [
  "async-trait",
  "botsu-core",
  "fluxer-rust",
+ "serde_json",
  "tokio",
  "tracing",
 ]

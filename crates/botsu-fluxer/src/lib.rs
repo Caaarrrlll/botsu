@@ -10,13 +10,26 @@ use botsu_core::{Author, Bot, Capabilities, ChatAdapter, Error, IncomingMessage,
 use fluxer::http::Http;
 use fluxer::prelude::{Client, Context, EventHandler, Message, Ready};
 
-/// Default public instance. Self-hosted instances set `FLUXER_API_URL`.
-pub const DEFAULT_API_URL: &str = "https://api.fluxer.app/v1";
+/// Public instance used when neither `FLUXER_URL` nor `FLUXER_API_URL` is set. Its API
+/// URL is discovered too: it has already moved once (api.fluxer.app → fluxer.com/api).
+pub const DEFAULT_INSTANCE: &str = "https://fluxer.app";
+
+/// Where to find the Fluxer API.
+#[derive(Debug, Clone)]
+pub enum FluxerEndpoint {
+    /// The public fluxer.app instance (API URL discovered).
+    Default,
+    /// An instance's web address (for example `https://fluxer.example.com`); the API URL is
+    /// discovered from `<instance>/.well-known/fluxer`.
+    Instance(String),
+    /// An explicit API base including `/v1`; skips discovery.
+    ApiUrl(String),
+}
 
 #[derive(Debug, Clone)]
 pub struct FluxerConfig {
     pub token: String,
-    pub api_url: String,
+    pub endpoint: FluxerEndpoint,
 }
 
 /// Outbound side: implements the core's [`ChatAdapter`] with Fluxer REST calls.
@@ -25,9 +38,9 @@ pub struct FluxerChat {
 }
 
 impl FluxerChat {
-    pub fn new(config: &FluxerConfig) -> Self {
+    pub fn new(token: &str, api_url: &str) -> Self {
         Self {
-            http: Arc::new(Http::new(&config.token, config.api_url.clone())),
+            http: Arc::new(Http::new(token, api_url.to_owned())),
         }
     }
 }
@@ -122,38 +135,110 @@ fn translate(msg: Message) -> Option<IncomingMessage> {
 /// Connects to Fluxer and runs until a fatal error. fluxer-rust reconnects on
 /// transient failures by itself.
 pub async fn run(config: FluxerConfig, bot: Arc<Bot>) -> Result<(), Error> {
-    let fluxer_chat = FluxerChat::new(&config);
-    preflight(&fluxer_chat.http, &config.api_url).await?;
+    let api_url = resolve_api_url(&config.endpoint).await?;
+    tracing::info!(%api_url, "using Fluxer API");
+
+    let fluxer_chat = FluxerChat::new(&config.token, &api_url);
+    check_login(&fluxer_chat.http, &api_url).await?;
 
     let chat: Arc<dyn ChatAdapter> = Arc::new(fluxer_chat);
     let mut client = Client::builder(&config.token)
-        .api_url(&config.api_url)
+        .api_url(&api_url)
         .event_handler(Handler { bot, chat })
         .build();
     client.start().await.map_err(err)
 }
 
-/// Fails fast with a readable error if the token or API URL is wrong, instead
-/// of letting the gateway loop retry forever. Also logs what the instance
-/// advertises (useful while checking a self-hosted setup).
-async fn preflight(http: &Http, api_url: &str) -> Result<(), Error> {
-    match http.get_well_known_fluxer().await {
-        Ok(wk) => tracing::info!(
-            api = %wk.endpoints.api,
-            gateway = %wk.endpoints.gateway,
-            voice_enabled = wk.features.voice_enabled,
-            self_hosted = wk.features.self_hosted,
-            "Fluxer instance discovered"
-        ),
-        // Not fatal: older or customised instances may not serve it.
-        Err(e) => tracing::warn!(error = %e, "could not read /.well-known/fluxer"),
+async fn resolve_api_url(endpoint: &FluxerEndpoint) -> Result<String, Error> {
+    match endpoint {
+        FluxerEndpoint::Default => discover(DEFAULT_INSTANCE).await,
+        FluxerEndpoint::ApiUrl(url) => Ok(url.trim_end_matches('/').to_owned()),
+        FluxerEndpoint::Instance(origin) => discover(origin).await,
     }
+}
 
+/// Reads `<origin>/.well-known/fluxer` and returns `endpoints.api_public` + `/v1`.
+///
+/// We fetch this ourselves rather than via fluxer-rust's `get_well_known_fluxer`:
+/// that one looks under the API path (`/api/.well-known/fluxer`), while instances
+/// serve it at the domain root, and its typed struct fails on any missing field.
+async fn discover(origin: &str) -> Result<String, Error> {
+    let origin = origin.trim_end_matches('/');
+    let url = format!("{origin}/.well-known/fluxer");
+    let fail = |e: &dyn std::fmt::Display| {
+        err(format!(
+            "could not read {url} ({e}); check FLUXER_URL is your instance's web address, \
+             or set FLUXER_API_URL directly"
+        ))
+    };
+
+    // A token-less client: the discovery document is public.
+    let doc: serde_json::Value = Http::new_user("", origin.to_owned())
+        .client
+        .get(&url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| fail(&e))?
+        .json()
+        .await
+        .map_err(|e| fail(&e))?;
+
+    let endpoints = &doc["endpoints"];
+    let base = endpoints["api_public"]
+        .as_str()
+        .or_else(|| endpoints["api"].as_str())
+        .ok_or_else(|| fail(&"no endpoints.api_public in the document"))?
+        .trim_end_matches('/');
+
+    let features = &doc["features"];
+    tracing::info!(
+        instance = origin,
+        gateway = endpoints["gateway"].as_str().unwrap_or("?"),
+        voice_enabled = features["voice_enabled"].as_bool(),
+        self_hosted = features["self_hosted"].as_bool(),
+        "Fluxer instance discovered"
+    );
+
+    Ok(with_v1(base))
+}
+
+/// The discovery document publishes the API base without the version segment.
+fn with_v1(base: &str) -> String {
+    let base = base.trim_end_matches('/');
+    if base.ends_with("/v1") {
+        base.to_owned()
+    } else {
+        format!("{base}/v1")
+    }
+}
+
+/// Fails fast with a readable error if the token or API URL is wrong, instead
+/// of letting the gateway loop retry forever.
+async fn check_login(http: &Http, api_url: &str) -> Result<(), Error> {
     let me = http.get_me().await.map_err(|e| {
         err(format!(
-            "login check failed against {api_url} ({e}); check FLUXER_TOKEN and FLUXER_API_URL"
+            "login check failed against {api_url} ({e}); check FLUXER_TOKEN"
         ))
     })?;
     tracing::info!(user = %me.username, id = %me.id, "Fluxer token OK");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_v1;
+
+    #[test]
+    fn appends_version_once() {
+        assert_eq!(
+            with_v1("https://fluxer.com/api"),
+            "https://fluxer.com/api/v1"
+        );
+        assert_eq!(
+            with_v1("https://fluxer.com/api/"),
+            "https://fluxer.com/api/v1"
+        );
+        assert_eq!(with_v1("https://x.lan/api/v1"), "https://x.lan/api/v1");
+    }
 }
