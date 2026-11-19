@@ -70,6 +70,14 @@ impl ChatAdapter for DiscordChat {
             .map_err(err)
     }
 
+    async fn guild_owner(&self, guild_id: &str) -> botsu_core::Result<Option<String>> {
+        let guild = GuildId::new(snowflake(guild_id)?)
+            .to_partial_guild(&self.http)
+            .await
+            .map_err(err)?;
+        Ok(Some(guild.owner_id.to_string()))
+    }
+
     async fn find_channel(&self, guild_id: &str, name: &str) -> botsu_core::Result<Option<String>> {
         let channels = GuildId::new(snowflake(guild_id)?)
             .channels(&self.http)

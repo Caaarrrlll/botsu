@@ -74,6 +74,11 @@ impl ChatAdapter for FluxerChat {
         Ok(msg.id)
     }
 
+    async fn guild_owner(&self, guild_id: &str) -> botsu_core::Result<Option<String>> {
+        let guild = self.http.get_guild(guild_id).await.map_err(err)?;
+        Ok(guild.owner_id)
+    }
+
     async fn find_channel(&self, guild_id: &str, name: &str) -> botsu_core::Result<Option<String>> {
         let channels = self.http.get_guild_channels(guild_id).await.map_err(err)?;
         Ok(channels

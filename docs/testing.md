@@ -119,9 +119,9 @@ Report anything odd with the log output. `RUST_LOG=debug` shows every command ru
 
 ### Setup
 
-1. **Owners.** Only user IDs in `BOTSU_OWNERS` can add or remove alerts. To find yours, run
-   `!tube add x` on each platform: the bot answers with your user ID. Put both IDs in `.env`
-   (`BOTSU_OWNERS=123...,157...`) and restart the bot.
+1. **Owners.** Anyone can add and list alerts; only bot owners (`BOTSU_OWNERS`) can import lists.
+   To find your ID, run `!tube import` on each platform: the bot answers with your user ID. Put
+   both IDs in `.env` (`BOTSU_OWNERS=123...,157...`) and restart the bot.
 2. **Twitch (optional).** At <https://dev.twitch.tv/console/apps> → **Register Your Application**:
    any name, OAuth Redirect URL `http://localhost`, category **Chat Bot**, client type
    **Confidential**. Open it with **Manage**, copy the **Client ID**, click **New Secret** and copy
@@ -151,6 +151,17 @@ Report anything odd with the log output. `RUST_LOG=debug` shows every command ru
 Without `#channel`, alerts go to the channel the command was typed in. The bot first posts a
 short notice in the target channel; if it can't post there, nothing is saved.
 
+**Who can do what:**
+
+| Subcommand | Allowed |
+|---|---|
+| `add`, `list` | anyone |
+| `remove`, `shorts` | whoever added that alert, the server owner, bot owners |
+| `import` | bot owners (`BOTSU_OWNERS`) |
+
+If a `remove` matches alerts from several people, only the caller's own are removed (all of them
+for the server owner) and the reply says how many were left alone.
+
 **Import** reads channel IDs (`UC...`) from any text, such as Red's `tube list` output, and Twitch names
 from lists like `a, b and c`. It keeps the channel layout of the old bot's lists:
 
@@ -169,7 +180,9 @@ is skipped and listed. Nothing already published or already live is posted.
 
 | Test | Discord | Fluxer |
 |---|---|---|
-| Non-owner gets "Only bot owners can do that" with their ID | | |
+| Any member can `!tube add` and `!tube list` | | |
+| Another member can't `!tube remove` your alert; the server owner can | | |
+| Non-owner `!tube import` gets "Only bot owners can do that" with their ID | | |
 | `!tube add @SomeChannel` replies with the channel name and latest video, no flood of old videos | | |
 | A new Short is not posted; after `!tube shorts <name> on` it is | | |
 | A live stream posts "is live on YouTube"; a scheduled one posts only when it starts | | |

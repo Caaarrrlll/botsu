@@ -42,14 +42,14 @@ All configuration is environment variables; see [.env.example](.env.example).
 | `FLUXER_URL` | no | your self-hosted instance's web address; API URL is discovered. Unset = fluxer.app |
 | `FLUXER_API_URL` | no | explicit API base with `/v1`; overrides `FLUXER_URL` |
 | `BOTSU_PREFIX` | no | `$` |
-| `BOTSU_OWNERS` | for alerts | user IDs (any platform) allowed to add/remove alerts |
+| `BOTSU_OWNERS` | for import | user IDs (any platform) allowed to import alert lists and manage anyone's alerts |
 | `YOUTUBE_API_KEY` | recommended | YouTube Data API v3 key: @handles, live/upcoming stream detection |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | for Twitch alerts | from dev.twitch.tv; both or neither |
 | `BOTSU_DATA_DIR` | no | `data` (`/data` in Docker): SQLite database |
 | `YOUTUBE_POLL_SECONDS`, `TWITCH_POLL_SECONDS` | no | `300`, `120` |
+| `RUST_LOG` | no | `info,botsu=debug` |
 
 Getting tokens and testing against live servers: [docs/testing.md](docs/testing.md).
-| `RUST_LOG` | no | `info,botsu=debug` |
 
 ## Docker / Unraid
 

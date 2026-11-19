@@ -187,9 +187,18 @@ used for detection because polling every channel through the Data API would exce
 
 ## Permissions
 
-Until phase 4, commands that change state call `ctx.require_owner()`: the author's user ID must be
-in `BOTSU_OWNERS` (IDs from any platform, comma-separated). Refusals include the author's ID, so
-setting it up doesn't need developer mode.
+Alert commands (`alerts/commands.rs`):
+
+| Subcommand | Allowed |
+|---|---|
+| `add`, `list` | anyone |
+| `remove`, `tube shorts` | the subscription's `created_by`, the server owner (`ChatAdapter::guild_owner`), bot owners |
+| `import` | bot owners: `ctx.require_owner()` checks `BOTSU_OWNERS` (IDs from any platform) |
+
+`permitted()` filters the matching subscriptions to those the caller may change; the server owner
+is only looked up when some match belongs to someone else. Refusals of owner-only commands include
+the author's ID, so setting up `BOTSU_OWNERS` doesn't need developer mode. Role-based permissions
+come with phase 4.
 
 ## Configuration
 
