@@ -60,7 +60,7 @@ schema, adapter trait or alert rules change.
 - Commands are grouped: `!mod …`, `!admin …`, `!music …` (`command::Group`).
 
 ## Current phase
-Running on Unraid from the Docker Hub image (CI publishes on push). Code done, live tests pending:
+Running on Unraid from the Docker Hub image (CI publishes on push). Phase 7 runbook: docs/cutover.md. Code done, live tests pending:
 phase 2 alerts (testing.md 5, waiting for a real upload/stream), phase 4 server tools (6), phase 5
 moderation (7), phase 6 music (8; Fluxer playback confirmed, Discord pending). Phase 0 voice works on both. Next after music: phase 7 (cutover). Test targets: self-hosted Fluxer (Unraid) and
 several Discord servers, following docs/testing.md. Red still runs on those Discord servers with

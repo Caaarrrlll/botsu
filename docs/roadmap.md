@@ -172,7 +172,10 @@ search/URL ──► yt-dlp (subprocess) ──► stream URL ──► ffmpeg �
 
 ## Phase 7: Cutover
 
-- [ ] Run botsu next to Red on Discord with a different prefix, then give it `$`.
+Runbook: [cutover.md](cutover.md).
+
+- [x] Run botsu next to Red on Discord with a different prefix (`!`, since phase 2).
+- [ ] Give it `$` (cutover.md step 2).
 - [ ] Move Tube/streams subscriptions and mod settings over; check nothing is posted twice during the overlap.
 - [ ] Stop Red, then remove the Red container and Lavalink. Record memory before and after.
 - [ ] Update the server notes (template snapshot, env file location, update procedure).
