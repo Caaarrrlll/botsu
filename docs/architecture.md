@@ -61,6 +61,8 @@ once connected, and pollers look up `bot.chat(platform)` to post.
 | `channel_guild`, `guild_owner` | no | channel-in-this-server check, permissions |
 | `member_roles`, `roles`, `add_role`, `remove_role` | no | permissions, `addrole`/`removerole`, `set` |
 | `recent_messages(channel, before, limit)` | no | `cleanup` |
+| `bot_user_id`, `user_name` | no | moderation (hierarchy check, names in the mod-log) |
+| `kick`, `ban`, `unban`, `bans`, `timeout` | no | moderation (phase 5); reasons go to the audit log |
 
 Optional methods have default bodies that return `Error::Unsupported`, so a platform that can't
 do something answers "not supported on X" instead of failing oddly. Add methods as features need
@@ -227,6 +229,8 @@ everyone.
 |---|---|
 | `ping`, `help`, `tube`/`twitch` `add`/`list`/`remove` | everyone |
 | `cleanup` | mod |
+| `warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`, `untimeout`, `case`, `cases`, `reason`, `unwarn`, `bans` | mod (`reason` on someone else's case: admin) |
+| `warnings` | everyone for themselves; mod for others |
 | `addrole`, `removerole`, `announce` | admin (roles with Administrator: server owner) |
 | `set` | server owner |
 | `tube`/`twitch import`, `tube shorts`, `audio` | bot owner (`ctx.require_owner()` / `level()`) |
@@ -245,6 +249,49 @@ developer mode. **Channel arguments** go through `CommandContext::ensure_channel
 | `role_id` | TEXT | Role granting that level |
 
 Primary key on all four columns.
+
+## Moderation
+
+`moderation.rs`. Every action (`warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`,
+`untimeout`) becomes a case, numbered per platform and server, and is posted to the mod-log
+channel when one is set (`set modlog #channel`, stored in `guild_settings`). Mod-log posts use
+names, not mentions, so they don't ping anyone.
+
+**Hierarchy** (`ModTools::check_target`): nobody acts on themselves, the bot or the server owner.
+Below the server owner, the target must be below the moderator in botsu's levels (a mod can't
+kick an admin or another mod) and in role rank (highest role `position`). Banning a non-member by
+ID skips the rank checks. The platform still enforces the bot's own rank and permissions; refusals
+are shown as "I need …, and my highest role must be above theirs".
+
+**Temp-bans** are permanent platform bans plus a `scheduled_unbans` row. A task
+(`spawn_unban_scheduler`) checks every 30 s, starting at boot, so bans that came due while the
+bot was down are lifted right away. If lifting fails it checks the ban list (unbanned by hand:
+drop the row) and otherwise retries for 30 minutes, then reports to the mod-log. A permanent ban
+or an unban cancels the schedule. Timeouts expire on the platform (max 28 days, Discord's limit).
+
+### `mod_cases` (migration 4)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `platform`, `guild_id` | TEXT | Server |
+| `number` | INTEGER | Case number, per platform and server (`MAX + 1`) |
+| `action` | TEXT | `warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`, `untimeout` |
+| `target_id`, `moderator_id` | TEXT | Users; moderator `''` = botsu (temp-ban ended) |
+| `reason` | TEXT? | Changed with `reason <n>` |
+| `created_at` | INTEGER | Unix seconds |
+| `expires_at` | INTEGER? | Temp-ban or timeout end |
+| `revoked_at` | INTEGER? | Warning removed with `unwarn` (the case stays) |
+
+Primary key `(platform, guild_id, number)`; index on `(platform, guild_id, target_id)`.
+
+### `scheduled_unbans` (migration 4)
+
+`(platform, guild_id, user_id)` primary key, `unban_at`, `case_number` (the tempban case),
+`attempts` (failed lifts so far).
+
+### `guild_settings` (migration 4)
+
+Key/value per `(platform, guild_id, key)`. Keys: `modlog_channel`.
 
 ## Configuration
 

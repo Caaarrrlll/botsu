@@ -133,12 +133,14 @@ Small features that share one prerequisite: knowing who may run what.
 
 ## Phase 5: Moderation
 
-- [ ] Adapter methods: kick, ban (with reason, optional message deletion), unban, timeout (Discord native; Fluxer `communication_disabled_until`), list bans.
-- [ ] **Cases:** every mod action creates a numbered case (who, what, why, when) in SQLite and is posted to a mod-log channel. `$case <n>`, `$reason <n> <text>`.
-- [ ] **Warnings:** `$warn`, `$warnings <user>`, `$unwarn`.
-- [ ] **Temp-ban:** `$tempban <user> <duration> [reason]`. Expiry stored in the database; the scheduler lifts bans and catches up on startup after downtime.
-- [ ] Hierarchy checks: can't act on owners, on users with a higher role, or on the bot itself.
+- [x] Adapter methods: kick, ban (with reason, optional message deletion), unban, timeout (Discord native; Fluxer `communication_disabled_until`), list bans. Reasons go to the audit log (Fluxer: `X-Audit-Log-Reason`, sent by botsu itself since fluxer-rust's helpers can't).
+- [x] **Cases:** every mod action creates a numbered case (who, what, why, when) in SQLite (migration 4) and is posted to a mod-log channel (`set modlog #channel`). `case <n>`, `cases <user>`, `reason <n> <text>`.
+- [x] **Warnings:** `warn`, `warnings [user]` (own for anyone, others for mods), `unwarn <case>`.
+- [x] **Temp-ban:** `tempban <user> <duration> [reason]`. Expiry stored in the database; a task checks every 30 s from startup, so it catches up after downtime. Plus `timeout`/`untimeout` (max 28 days) and `bans`.
+- [x] Hierarchy checks: can't act on yourself, the server owner or the bot; the target must be below the moderator in botsu's levels and in role rank.
+- [ ] Live test on Discord and Fluxer: checklist in [testing.md](testing.md) section 7.
 - [ ] Optional: import existing cases from Red's config (only if they're worth keeping).
+- [ ] Optional: DM the user before a kick/ban, and `$mute` via a role on platforms without timeouts.
 
 **Done when:** parity with Red's mod cog as used; a temp-ban survives a container restart and still expires on time.
 

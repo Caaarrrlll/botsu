@@ -157,6 +157,7 @@ mod tests {
                 id: id.into(),
                 name: id.into(),
                 permissions,
+                position: 0,
             };
             let everyone = if self.everyone_is_admin {
                 ADMINISTRATOR

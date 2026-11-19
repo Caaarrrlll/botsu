@@ -2,7 +2,7 @@
 //!
 //! | Command | Level |
 //! |---|---|
-//! | `set adminrole/modrole add/remove <role>`, `set roles` | server owner |
+//! | `set adminrole/modrole add/remove <role>`, `set roles`, `set modlog` | server owner |
 //! | `cleanup messages/user/bots` | mod |
 //! | `addrole`, `removerole`, `announce` | admin |
 
@@ -15,6 +15,7 @@ use crate::adapter::{ChatAdapter, RoleInfo, ADMINISTRATOR};
 use crate::alerts::parse_channel;
 use crate::command::{Command, CommandContext};
 use crate::error::{Error, Result};
+use crate::moderation::MODLOG_KEY;
 use crate::permissions::{Level, ADMIN_ROLE, MOD_ROLE};
 use crate::storage::{now, Store};
 
@@ -28,7 +29,7 @@ pub fn parse_user(arg: &str) -> Option<String> {
     (!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then(|| id.to_owned())
 }
 
-fn guild(ctx: &CommandContext) -> Result<String> {
+pub(crate) fn guild(ctx: &CommandContext) -> Result<String> {
     ctx.message
         .guild_id
         .clone()
@@ -73,8 +74,36 @@ impl SetCommand {
             "Permissions (server owner):\n\
              `{p}set adminrole add <role>` / `{p}set adminrole remove <role>`\n\
              `{p}set modrole add <role>` / `{p}set modrole remove <role>`\n\
-             `{p}set roles`: show who counts as admin and mod here"
+             `{p}set roles`: show who counts as admin and mod here\n\
+             `{p}set modlog <#channel>` / `{p}set modlog off`: where moderation cases are posted"
         )
+    }
+
+    async fn modlog(&self, ctx: &CommandContext, guild: &str, arg: &str) -> Result<()> {
+        let platform = ctx.message.platform;
+        let arg = arg.trim();
+        let reply = if arg.is_empty() {
+            match self.store.guild_setting(platform, guild, MODLOG_KEY)? {
+                Some(c) => format!("Moderation cases are posted in <#{c}>."),
+                None => format!(
+                    "No mod-log channel is set. `{}set modlog <#channel>` sets one.",
+                    ctx.prefix
+                ),
+            }
+        } else if arg.eq_ignore_ascii_case("off") {
+            self.store
+                .set_guild_setting(platform, guild, MODLOG_KEY, None)?;
+            "Moderation cases are no longer posted anywhere (they're still recorded).".to_owned()
+        } else {
+            let channel =
+                parse_channel(arg).ok_or_else(|| Error::Usage(Self::usage(&ctx.prefix)))?;
+            ctx.ensure_channel_here(&channel).await?;
+            self.store
+                .set_guild_setting(platform, guild, MODLOG_KEY, Some(&channel))?;
+            format!("Moderation cases will be posted in <#{channel}>.")
+        };
+        ctx.reply(&reply).await?;
+        Ok(())
     }
 }
 
@@ -85,7 +114,7 @@ impl Command for SetCommand {
     }
 
     fn help(&self) -> &'static str {
-        "Choose admin and mod roles (server owner)."
+        "Choose admin and mod roles and the mod-log channel (server owner)."
     }
 
     fn level(&self) -> Level {
@@ -100,6 +129,10 @@ impl Command for SetCommand {
         let action = words.next().unwrap_or("").to_lowercase();
         let rest = words.next().unwrap_or("").trim().to_owned();
 
+        if what == "modlog" {
+            let arg = ctx.args.trim_start()["modlog".len()..].to_owned();
+            return self.modlog(&ctx, &guild, &arg).await;
+        }
         if what == "roles" {
             let configured = self.store.guild_roles(platform, &guild)?;
             let list = |level: &str| {

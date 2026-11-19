@@ -9,8 +9,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use botsu_core::voice::VoiceAdapter;
 use botsu_core::{
-    Author, Bot, Capabilities, ChatAdapter, Error, HistoryMessage, IncomingMessage, Platform,
-    RoleInfo,
+    Author, BanInfo, Bot, Capabilities, ChatAdapter, Error, HistoryMessage, IncomingMessage,
+    Platform, RoleInfo,
 };
 use fluxer::http::Http;
 use fluxer::prelude::{
@@ -46,14 +46,65 @@ pub struct FluxerConfig {
 /// Outbound side: implements the core's [`ChatAdapter`] with Fluxer REST calls.
 pub struct FluxerChat {
     http: Arc<Http>,
+    /// The bot's user ID (from the login check).
+    bot_id: String,
 }
 
 impl FluxerChat {
-    pub fn new(token: &str, api_url: &str) -> Self {
-        Self {
-            http: Arc::new(Http::new(token, api_url.to_owned())),
+    pub fn new(http: Arc<Http>, bot_id: String) -> Self {
+        Self { http, bot_id }
+    }
+
+    /// A REST call with an optional JSON body and audit-log reason. fluxer-rust's moderation
+    /// helpers can't send a reason (or ban options), so these go through its client directly.
+    async fn call(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<serde_json::Value>,
+        reason: Option<&str>,
+    ) -> botsu_core::Result<()> {
+        let url = format!("{}{path}", self.http.base_url);
+        let client = &self.http.client;
+        let mut req = match method {
+            Method::Put => client.put(&url),
+            Method::Patch => client.patch(&url),
+            Method::Delete => client.delete(&url),
+        };
+        if let Some(r) = reason.filter(|r| !r.trim().is_empty()) {
+            req = req.header("X-Audit-Log-Reason", percent_encode(r));
+        }
+        req = match body {
+            Some(b) => req.json(&b),
+            None => req.body(""),
+        };
+        let resp = req.send().await.map_err(err)?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(err(format!("HTTP {status}: {text}")));
+        }
+        Ok(())
+    }
+}
+
+enum Method {
+    Put,
+    Patch,
+    Delete,
+}
+
+/// Audit-log reasons travel in a header, URL-encoded.
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
         }
     }
+    out
 }
 
 fn err(e: impl std::fmt::Display) -> Error {
@@ -110,6 +161,7 @@ impl ChatAdapter for FluxerChat {
                     .as_deref()
                     .and_then(|p| p.parse().ok())
                     .unwrap_or(0),
+                position: r.position.unwrap_or(0),
                 id: r.id,
                 name: r.name,
             })
@@ -208,6 +260,93 @@ impl ChatAdapter for FluxerChat {
             .bulk_delete_messages(channel_id, ids)
             .await
             .map_err(err)
+    }
+
+    async fn bot_user_id(&self) -> botsu_core::Result<String> {
+        Ok(self.bot_id.clone())
+    }
+
+    async fn user_name(&self, user_id: &str) -> botsu_core::Result<String> {
+        let user = self.http.get_user(user_id).await.map_err(err)?;
+        Ok(user.username)
+    }
+
+    async fn kick(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        reason: Option<&str>,
+    ) -> botsu_core::Result<()> {
+        let path = format!("/guilds/{guild_id}/members/{user_id}");
+        self.call(Method::Delete, &path, None, reason).await
+    }
+
+    async fn ban(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        reason: Option<&str>,
+        delete_message_days: u8,
+    ) -> botsu_core::Result<()> {
+        let path = format!("/guilds/{guild_id}/bans/{user_id}");
+        let body = serde_json::json!({
+            "reason": reason,
+            "delete_message_days": delete_message_days.min(7),
+        });
+        self.call(Method::Put, &path, Some(body), reason).await
+    }
+
+    async fn unban(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        reason: Option<&str>,
+    ) -> botsu_core::Result<()> {
+        let path = format!("/guilds/{guild_id}/bans/{user_id}");
+        self.call(Method::Delete, &path, None, reason).await
+    }
+
+    async fn bans(&self, guild_id: &str) -> botsu_core::Result<Vec<BanInfo>> {
+        let bans = self.http.get_guild_bans(guild_id).await.map_err(err)?;
+        Ok(bans
+            .iter()
+            .filter_map(|b| {
+                let user = &b["user"];
+                let id = user["id"].as_str()?.to_owned();
+                Some(BanInfo {
+                    user_name: user["global_name"]
+                        .as_str()
+                        .or_else(|| user["username"].as_str())
+                        .unwrap_or(&id)
+                        .to_owned(),
+                    reason: b["reason"].as_str().map(str::to_owned),
+                    user_id: id,
+                })
+            })
+            .collect())
+    }
+
+    async fn timeout(
+        &self,
+        guild_id: &str,
+        user_id: &str,
+        until: Option<i64>,
+        reason: Option<&str>,
+    ) -> botsu_core::Result<()> {
+        let until = until
+            .map(|t| {
+                OffsetDateTime::from_unix_timestamp(t)
+                    .ok()
+                    .and_then(|t| t.format(&Rfc3339).ok())
+                    .ok_or_else(|| err(format!("invalid time {t}")))
+            })
+            .transpose()?;
+        let mut body = serde_json::json!({ "communication_disabled_until": until });
+        if let (Some(r), Some(_)) = (reason, &until) {
+            body["timeout_reason"] = r.into();
+        }
+        let path = format!("/guilds/{guild_id}/members/{user_id}");
+        self.call(Method::Patch, &path, Some(body), reason).await
     }
 }
 
@@ -430,15 +569,15 @@ pub async fn run(
     let (api_url, webapp) = resolve_endpoints(&config.endpoint).await?;
     tracing::info!(%api_url, "using Fluxer API");
 
-    let fluxer_chat = FluxerChat::new(&config.token, &api_url);
-    let bot_id = check_login(&fluxer_chat.http, &api_url).await?;
+    let http = Arc::new(Http::new(&config.token, api_url.clone()));
+    let bot_id = check_login(&http, &api_url).await?;
     // On Fluxer the bot user's ID is the application ID.
     tracing::info!(
         "Fluxer invite link: {webapp}/oauth2/authorize?client_id={bot_id}&scope=bot&permissions={}",
         botsu_core::INVITE_PERMISSIONS
     );
 
-    let chat: Arc<dyn ChatAdapter> = Arc::new(fluxer_chat);
+    let chat: Arc<dyn ChatAdapter> = Arc::new(FluxerChat::new(http, bot_id));
     bot.register_chat(chat.clone());
     let mut client = Client::builder(&config.token)
         .api_url(&api_url)
