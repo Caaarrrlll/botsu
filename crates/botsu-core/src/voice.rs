@@ -25,7 +25,8 @@ pub trait VoiceAdapter: Send + Sync {
     async fn join(&self, guild_id: &str, channel_id: &str) -> Result<()>;
 
     /// Plays `source` (a file path or URL; anything ffmpeg reads), replacing what's playing.
-    async fn play(&self, guild_id: &str, source: &str) -> Result<()>;
+    /// May return a diagnostic note for the user (for example what the audio engine reports).
+    async fn play(&self, guild_id: &str, source: &str) -> Result<Option<String>>;
 
     async fn stop(&self, guild_id: &str) -> Result<()>;
 
@@ -133,7 +134,7 @@ impl Command for VoiceCommand {
                 } else {
                     arg.trim_start_matches('<').trim_end_matches('>').to_owned()
                 };
-                voice.play(&guild, &source).await?;
+                let note = voice.play(&guild, &source).await?;
                 let shown = if Path::new(&source)
                     .file_name()
                     .is_some_and(|n| n == "botsu-test-tone.wav")
@@ -142,7 +143,12 @@ impl Command for VoiceCommand {
                 } else {
                     format!("<{source}>")
                 };
-                ctx.reply(&format!("Playing {shown}.")).await?;
+                let mut reply = format!("Playing {shown}.");
+                if let Some(note) = note {
+                    reply.push(' ');
+                    reply.push_str(&note);
+                }
+                ctx.reply(&reply).await?;
             }
             "stop" => {
                 voice.stop(&guild).await?;
