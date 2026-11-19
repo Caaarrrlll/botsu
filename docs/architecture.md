@@ -91,8 +91,11 @@ for "now playing" and a player task. `music play` looks the query up with yt-dlp
 (`--flat-playlist -J`: title, length, page URL; `ytsearch1:` for words) and queues it. The player
 starts `yt-dlp -f bestaudio/best -o -` when the track starts and pipes it into the adapter's
 ffmpeg (`AudioInput::Pipe`): yt-dlp does the fetching, since YouTube often refuses bare stream URLs
-handed to ffmpeg. It then then polls `is_playing` every second (after a 5 s grace) until it ends
-or a skip (`Notify`, new per player task) arrives. Nothing is stored in the database; a restart
+handed to ffmpeg. It then polls `is_playing` every second (after a 5 s grace) until it ends
+or a skip (`Notify`, new per player task) arrives. `music pause|resume` calls the adapter's
+`set_paused` and marks the `Guild` paused: the player doesn't end a paused track, and gives a
+resumed one the 5 s grace again. `is_playing` is false while paused, so the idle timer still
+leaves after 10 minutes. Nothing is stored in the database; a restart
 empties queues.
 
 `ytdlp.rs`: botsu downloads the standalone yt-dlp into `<data dir>/bin` (no Python needed),

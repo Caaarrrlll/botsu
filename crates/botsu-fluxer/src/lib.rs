@@ -4,6 +4,7 @@
 //! fluxer-rust update breaks something, the fix should stay inside this crate.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -361,7 +362,13 @@ pub struct FluxerVoice {
     /// (guild, user) → voice channel.
     states: std::sync::Mutex<HashMap<(String, String), String>>,
     conns: tokio::sync::Mutex<HashMap<String, FluxerVoiceConnection>>,
-    playback: std::sync::Mutex<HashMap<String, AbortHandle>>,
+    playback: std::sync::Mutex<HashMap<String, Playback>>,
+}
+
+/// One server's running playback task and its pause flag.
+struct Playback {
+    task: AbortHandle,
+    paused: Arc<AtomicBool>,
 }
 
 impl FluxerVoice {
@@ -392,8 +399,8 @@ impl FluxerVoice {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .remove(guild_id);
-        if let Some(h) = handle {
-            h.abort();
+        if let Some(p) = handle {
+            p.task.abort();
         }
     }
 
@@ -456,20 +463,27 @@ impl VoiceAdapter for FluxerVoice {
             AudioInput::Pipe(s) => ("pipe:0".to_owned(), Some(s)),
         };
         self.stop_playback(guild_id);
+        let paused = Arc::new(AtomicBool::new(false));
         let mut task = {
             let conns = self.conns.lock().await;
             let conn = conns
                 .get(guild_id)
                 .ok_or_else(|| Error::Usage("I'm not in a voice channel; join first.".into()))?;
             // botsu's patched player (vendor/fluxer-rust): reconnect flags, stdin input, errors
-            // returned instead of posted to a channel.
-            conn.play_input(&source, stdin)
+            // returned instead of posted to a channel, pausing.
+            conn.play_input(&source, stdin, paused.clone())
                 .map_err(|e| err(format!("playing failed: {e}")))?
         };
         self.playback
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(guild_id.to_owned(), task.abort_handle());
+            .insert(
+                guild_id.to_owned(),
+                Playback {
+                    task: task.abort_handle(),
+                    paused,
+                },
+            );
         // An input that fails right away (bad link, download refused) fails here.
         tokio::select! {
             done = &mut task => {
@@ -518,7 +532,18 @@ impl VoiceAdapter for FluxerVoice {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .get(guild_id)
-            .is_some_and(|h| !h.is_finished())
+            .is_some_and(|p| !p.task.is_finished() && !p.paused.load(Ordering::Relaxed))
+    }
+
+    async fn set_paused(&self, guild_id: &str, paused: bool) -> botsu_core::Result<()> {
+        let playback = self.playback.lock().unwrap_or_else(|p| p.into_inner());
+        match playback.get(guild_id) {
+            Some(p) if !p.task.is_finished() => {
+                p.paused.store(paused, Ordering::Relaxed);
+                Ok(())
+            }
+            _ => Err(Error::Usage("Nothing is playing.".into())),
+        }
     }
 }
 

@@ -38,6 +38,16 @@ pub trait VoiceAdapter: Send + Sync {
 
     async fn stop(&self, guild_id: &str) -> Result<()>;
 
+    /// Pauses or resumes what's playing. While paused, `is_playing` is false, so the idle timer
+    /// still leaves after 10 minutes.
+    async fn set_paused(&self, guild_id: &str, paused: bool) -> Result<()> {
+        let _ = (guild_id, paused);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "pausing",
+        })
+    }
+
     async fn leave(&self, guild_id: &str) -> Result<()>;
 
     /// Whether the bot is currently in a voice channel in this server.
