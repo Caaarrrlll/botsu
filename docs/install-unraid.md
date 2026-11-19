@@ -1,128 +1,88 @@
 # Running botsu on Unraid
 
-Interim guide until phase 3 publishes the image to Docker Hub and adds an Unraid template. Until
-then the image is built yourself and the container is created from the Unraid terminal
-(**Tools → Terminal**, or SSH as root). Commands below are for that terminal.
+The image is published as `caaarrrlll/botsu:latest` on Docker Hub. Nothing needs to be prepared on
+the server: the container creates its folder and a settings file on first start.
 
-## 1. Secrets file
+## 1. Add the container
 
-All settings live in one root-only env file, outside the container and outside git:
-
-```sh
-mkdir -p /mnt/user/appdata/secrets
-nano /mnt/user/appdata/secrets/botsu.env      # paste your settings, see below
-chmod 600 /mnt/user/appdata/secrets/botsu.env
-```
-
-Use the same keys as your local `.env` (see [`.env.example`](../.env.example)):
-`DISCORD_TOKEN`, `FLUXER_TOKEN`, `FLUXER_URL`, `BOTSU_PREFIX`, `BOTSU_OWNERS`, `YOUTUBE_API_KEY`,
-`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `RUST_LOG`.
-
-- **No quotes** around values: Docker keeps them as part of the value (the bot refuses tokens
-  that start with a quote).
-- Leave out `BOTSU_DATA_DIR`: the image already uses `/data`.
-- Editing this file later needs the container **recreated** (step 4 again), not just restarted.
-
-## 2. Data folder
-
-The database (subscriptions, what's been posted) goes in appdata. Unraid's convention is to run
-containers as `nobody:users` (99:100), so give that user the folder:
+In the Unraid terminal (**Tools → Terminal**), fetch the template once:
 
 ```sh
-mkdir -p /mnt/user/appdata/botsu
-chown 99:100 /mnt/user/appdata/botsu
+wget -O /boot/config/plugins/dockerMan/templates-user/my-botsu.xml \
+  https://raw.githubusercontent.com/Caaarrrlll/botsu/master/deploy/unraid/my-botsu.xml
 ```
 
-**Moving your local test database** (optional, keeps subscriptions you made while testing):
-stop the local bot first, then copy `data/botsu.db` from the repo to `/mnt/user/appdata/botsu/`
-(for example over the network share `\\<unraid-host>\appdata\botsu`), and run the `chown` again.
-If `botsu.db-wal` and `botsu.db-shm` exist next to it, copy them too.
+Then **Docker → Add Container → Template: botsu → Apply**. Unraid downloads the image and starts
+it. Defaults: data in `/mnt/user/appdata/botsu`, running as `nobody:users` (99:100, changeable under
+**Show more settings** as `PUID`/`PGID`). No ports are needed: the bot only connects outwards.
 
-## 3. Get the image
+## 2. Fill in the settings
 
-Pick one.
+On first start the bot creates `/mnt/user/appdata/botsu/botsu.env` and logs:
 
-**A. Build on Unraid straight from GitHub** (needs the latest commits pushed):
-
-```sh
-docker build -t botsu:latest https://github.com/Caaarrrlll/botsu.git#master
+```
+WARN botsu: created a settings file file=/data/botsu.env
+WARN botsu: no platform configured: put DISCORD_TOKEN and/or FLUXER_TOKEN in this file ...
 ```
 
-The first build takes 10–20 minutes (Rust compile plus the libwebrtc download); later builds
-reuse the cache.
+Edit that file, over the network share (`\\<unraid-host>\appdata\botsu\botsu.env`) or in the terminal
+(`nano /mnt/user/appdata/botsu/botsu.env`). Every setting is explained in the file; the important
+ones:
 
-**B. Build on your PC and copy it over** (no push needed):
+| Setting | |
+|---|---|
+| `DISCORD_TOKEN` and/or `FLUXER_TOKEN` | at least one; see [testing.md](testing.md) for creating the bots |
+| `FLUXER_URL` | your Fluxer address, for a self-hosted instance |
+| `BOTSU_PREFIX` | `!` while Red still runs on the same servers |
+| `BOTSU_OWNERS` | your user IDs, for adding alerts |
+| `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | for alerts |
 
-```powershell
-docker build -t botsu:latest .
-docker save botsu:latest -o botsu.tar
-```
+**No quotes** around values. Save, and within 30 seconds the bot starts by itself. After that,
+**restart the container** to apply further changes to the file.
 
-Copy `botsu.tar` to Unraid (for example to `\\<unraid-host>\appdata\`), then on Unraid:
+The file is readable only by its owner and the `users` group, so the tokens aren't world-readable.
 
-```sh
-docker load -i /mnt/user/appdata/botsu.tar && rm /mnt/user/appdata/botsu.tar
-```
+**Stop the bot on your PC** before the server one connects, otherwise both answer every command.
 
-## 4. Create the container
+## 3. Check it
 
-**Stop the bot on your PC first**, otherwise both answer every command.
-
-```sh
-docker run -d --name botsu --restart unless-stopped \
-  --user 99:100 \
-  -v /mnt/user/appdata/botsu:/data \
-  --env-file /mnt/user/appdata/secrets/botsu.env \
-  botsu:latest
-```
-
-No ports are published: the bot only makes outgoing connections. The container shows up in
-Unraid's **Docker** tab (start/stop/logs work there). Created this way it has no template, so
-settings are changed by editing the env file and running this step again.
-
-**Or with the template** (adds the icon and an Edit page in the Docker tab): copy
-[`deploy/unraid/my-botsu.xml`](../deploy/unraid/my-botsu.xml) to
-`/boot/config/plugins/dockerMan/templates-user/my-botsu.xml`, then **Docker → Add Container →
-Template: botsu** → **Apply**. It sets the same `--user`, `--env-file` and `/data` mapping as the
-command above. The template uses the local image `botsu:latest` from step 3; if Unraid tries to
-pull it from Docker Hub and fails, use the `docker run` command instead until phase 3 publishes
-the image. The icon is loaded from GitHub, so it appears once `assets/monkasS.png` is pushed.
-
-## 5. Check it
-
-```sh
-docker logs -f botsu          # Ctrl+C stops following, not the bot
-```
-
-Expected within a few seconds:
+**Docker** tab → botsu icon → **Logs**, or `docker logs -f botsu`. Expected:
 
 ```
 INFO botsu: starting botsu 0.1.0 prefix="!" data_dir=/data
-INFO botsu_core::storage: applied database migration version=1      (first start only)
 INFO botsu: YouTube Data API enabled (@handles, live/upcoming detection)
 INFO botsu: Twitch alerts enabled
-INFO botsu_fluxer: Fluxer token OK user=botsu ...
 INFO botsu_fluxer: connected to Fluxer user=botsu
 INFO botsu_discord: connected to Discord user=... guilds=N
 ```
 
-Then `!ping` on Discord and Fluxer. Memory use: `docker stats botsu --no-stream`.
+Then `!ping` on Discord and Fluxer. Memory use: `docker stats botsu --no-stream`. If it stops,
+the log's last line names the setting to fix.
 
-If it exits, `docker logs botsu` shows why; the messages name the setting to fix. A permissions
-error about `/data` means step 2's `chown` is missing.
+## Moving your local test database (optional)
+
+To keep subscriptions made while testing on your PC: stop the container and the local bot, copy
+`data/botsu.db` from the repo (plus `botsu.db-wal` / `botsu.db-shm` if they exist) to
+`\\<unraid-host>\appdata\botsu\`, and start the container. Ownership is fixed automatically on start.
 
 ## Updating
 
+**Docker** tab → **Check for Updates** → **Apply Update**, or:
+
 ```sh
-docker build -t botsu:latest https://github.com/Caaarrrlll/botsu.git#master   # or option B
-docker rm -f botsu
-# then step 4 again
+docker pull caaarrrlll/botsu:latest   # then Apply Update / recreate the container
 ```
 
-Subscriptions survive this: they're in `/mnt/user/appdata/botsu`, not in the container.
+Settings and subscriptions live in `/mnt/user/appdata/botsu`, so they survive updates.
+
+## Keeping secrets elsewhere (optional)
+
+Settings can also come from environment variables, which override the file: add
+`--env-file /mnt/user/appdata/secrets/botsu.env` (a root-only file you create) to **Extra
+Parameters**. Editing that file needs the container recreated (**Apply**), not just restarted.
 
 ## Unraid gotcha
 
-If a container's **first** start fails (for example a typo in the run command), Docker can leave
-it with no network (`docker inspect botsu` shows `"Networks": {}`). Fix: `docker rm -f botsu` and
-run step 4 again.
+If a container's **first** start fails, Docker can leave it with no network
+(`docker inspect botsu` shows `"Networks": {}`). Fix: remove the container and **Apply** the
+template again.

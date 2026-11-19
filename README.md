@@ -53,21 +53,25 @@ Getting tokens and testing against live servers: [docs/testing.md](docs/testing.
 
 ## Docker / Unraid
 
-Step-by-step for Unraid (secrets file, appdata permissions, getting the image, updating):
-[docs/install-unraid.md](docs/install-unraid.md).
+Image: `caaarrrlll/botsu:latest` on Docker Hub (published often during development).
+Unraid step by step, with a template: [docs/install-unraid.md](docs/install-unraid.md).
+
+Any Docker host:
 
 ```sh
-docker build -t botsu .
 docker run -d --name botsu --restart unless-stopped \
-  -v /mnt/user/appdata/botsu:/data \
-  --env-file /mnt/user/appdata/secrets/bot.env botsu
+  -v /path/to/botsu-data:/data \
+  caaarrrlll/botsu:latest
 ```
 
-`/data` holds the SQLite database (alert subscriptions and what's already been posted). Without
-the volume, a recreated container forgets its subscriptions.
+On first start the container creates `botsu.env` in the data folder and waits: fill in at least
+one token (no quotes around values) and it starts within 30 seconds. Settings can instead be
+passed with `-e` or `--env-file`; those override the file. `/data` also holds the SQLite
+database (subscriptions, what's been posted), so keep it on a volume.
 
-The env file must be root-only (`chmod 600`) and have **no quotes** around values. After editing
-it, recreate the container (Edit → Apply); a restart doesn't re-read it.
+The container runs the bot as `PUID:PGID` (default `99:100`, Unraid's nobody:users) and fixes the
+data folder's ownership on start. Set `-e PUID=1000 -e PGID=1000` (or your own IDs) elsewhere.
+Build it yourself with `docker build -t botsu .`.
 
 ## Layout
 

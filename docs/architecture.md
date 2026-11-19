@@ -193,9 +193,20 @@ setting it up doesn't need developer mode.
 
 ## Configuration
 
-Environment variables only, documented in [`.env.example`](../.env.example) and the
-[README](../README.md#configuration). Locally they come from `.env` (`scripts/run.ps1`, VS Code
-launch configs); in Docker from `--env-file`.
+Documented in [`.env.example`](../.env.example) and the [README](../README.md#configuration).
+Code: `crates/botsu/src/config.rs`. Each setting is looked up in the environment first, then in
+the settings file `<BOTSU_DATA_DIR>/botsu.env` (Docker `--env-file` rules: `KEY=value`, `#`
+comments, no quotes). Locally the environment comes from `.env` (`scripts/run.ps1`, VS Code launch
+configs).
+
+**First start without a token:** the bot writes `botsu.env` from the embedded `.env.example`
+(mode 660), logs where it is, and re-reads it every 30 seconds until `DISCORD_TOKEN` or
+`FLUXER_TOKEN` is set, then starts. Settings that are present but invalid stop the bot with an
+error instead.
+
+**Container start:** `docker/entrypoint.sh` runs as root only to create `/data` and give it (and
+files in it) to `PUID:PGID` (default 99:100), then `exec setpriv` drops to that user. Started
+with `--user`, it skips that and runs the bot directly.
 
 ## Extending
 

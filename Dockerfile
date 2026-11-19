@@ -16,12 +16,14 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates libglib2.0-0 libva2 libva-drm2 \
     && rm -rf /var/lib/apt/lists/*
-RUN useradd --system --uid 10001 botsu \
-    && mkdir /data && chown botsu /data && chmod 0777 /data
 COPY --from=build /botsu /usr/local/bin/botsu
-# SQLite database (alert subscriptions, posted items). Mount a volume here to keep it.
-# World-writable so the image also runs with --user 99:100 (Unraid) or any other user.
-ENV BOTSU_DATA_DIR=/data
+COPY --chmod=0755 docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# /data holds the database and, if settings aren't passed as environment variables, the
+# settings file botsu.env (created on first start). Mount a host folder here to keep them.
+# The entrypoint gives /data to PUID:PGID and drops to that user before the bot starts.
+ENV BOTSU_DATA_DIR=/data \
+    PUID=99 \
+    PGID=100
+RUN mkdir /data
 VOLUME /data
-USER botsu
-ENTRYPOINT ["/usr/local/bin/botsu"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

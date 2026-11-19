@@ -61,7 +61,7 @@ Already done: workspace, `botsu-core`, `botsu-fluxer`, binary, env config, Docke
 - [x] Fluxer startup check: token and API URL verified before connecting; logs `voice_enabled` from `/.well-known/fluxer`.
 - [x] Test `ping` on the self-hosted Fluxer instance and on Discord (2026-11-19, prefix `!`, both answered from one process). Rest of the checklist in [testing.md](testing.md) (help, case, reconnect) still to run.
 - [x] `docker build` works (2026-11-19: 161 MB image; starts as `--user 99:100` and writes its database to a mounted `/data`).
-- [ ] Runs on Unraid with the env file from `/mnt/user/appdata/secrets/`: [install-unraid.md](install-unraid.md).
+- [ ] Runs on Unraid: [install-unraid.md](install-unraid.md). Image published manually as `caaarrrlll/botsu:latest` (2026-11-19) until the phase 3 workflow does it.
 - [x] Image runs as a non-root user and works with `--user 99:100` (Unraid's nobody:users) and with a mounted `/data`.
 
 **Done when:** the same container answers `$ping` on Discord and Fluxer at the same time.
@@ -106,7 +106,7 @@ Get the project building and publishing itself before the bigger features land.
 
 ### Running it anywhere
 - [ ] `deploy/docker-compose.yml`: image from Docker Hub, `env_file`, `/data` volume, `restart: unless-stopped`.
-- [ ] `deploy/unraid/my-botsu.xml`: interim version exists (local `botsu:latest`, placeholder icon `assets/monkasS.png`); switch it to the Docker Hub image (appdata path, Extra Parameters `--env-file`, `--user 99:100`). Keep a snapshot in the server notes.
+- [x] `deploy/unraid/my-botsu.xml`: pulls `caaarrrlll/botsu:latest`; data folder + PUID/PGID only, settings file auto-created in appdata. Icon is a placeholder (`assets/monkasS.png`).
 - [ ] `docs/install-docker.md`: plain `docker run` and Compose instructions for anyone.
 - [ ] **Log invite links at startup** (terminal and `docker logs`), one per connected platform, so whoever spins the bot up can add it to servers right away. No extra config needed: Discord's application ID comes from the Ready event (`ready.application.id`); on Fluxer the bot user ID *is* the application ID (seen in the token check), and the host comes from discovery. Permissions value grows with later phases (one constant per phase's needs). Then `*_APPLICATION_ID` in `.env.example` can be dropped.
 - [ ] `docs/install-linux.md`: native install without containers: download or `cargo build --release`, a `botsu` system user, `/etc/botsu/botsu.env` (mode 600), `/var/lib/botsu` as the data directory, and a hardened systemd unit (`deploy/systemd/botsu.service`). Phase 6 adds the ffmpeg and yt-dlp steps.
