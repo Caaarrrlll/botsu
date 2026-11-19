@@ -74,6 +74,18 @@ impl ChatAdapter for FluxerChat {
         Ok(msg.id)
     }
 
+    async fn find_channel(&self, guild_id: &str, name: &str) -> botsu_core::Result<Option<String>> {
+        let channels = self.http.get_guild_channels(guild_id).await.map_err(err)?;
+        Ok(channels
+            .into_iter()
+            .find(|c| {
+                c.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+            .map(|c| c.id))
+    }
+
     async fn delete_message(&self, channel_id: &str, message_id: &str) -> botsu_core::Result<()> {
         self.http
             .delete_message(channel_id, message_id)
@@ -142,6 +154,7 @@ pub async fn run(config: FluxerConfig, bot: Arc<Bot>) -> Result<(), Error> {
     check_login(&fluxer_chat.http, &api_url).await?;
 
     let chat: Arc<dyn ChatAdapter> = Arc::new(fluxer_chat);
+    bot.register_chat(chat.clone());
     let mut client = Client::builder(&config.token)
         .api_url(&api_url)
         .event_handler(Handler { bot, chat })

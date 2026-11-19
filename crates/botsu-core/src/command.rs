@@ -9,13 +9,16 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::adapter::{ChatAdapter, IncomingMessage};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 pub struct CommandContext {
     pub chat: Arc<dyn ChatAdapter>,
     pub message: IncomingMessage,
     /// Everything after the command name, trimmed.
     pub args: String,
+    /// The author is listed in `BOTSU_OWNERS`.
+    pub is_owner: bool,
+    pub prefix: String,
 }
 
 impl CommandContext {
@@ -24,6 +27,19 @@ impl CommandContext {
         self.chat
             .send_message(&self.message.channel_id, content)
             .await
+    }
+
+    /// Stops the command unless the author is a bot owner. The reply includes the author's
+    /// ID, so setting up `BOTSU_OWNERS` doesn't need developer mode to find it.
+    pub fn require_owner(&self) -> Result<()> {
+        if self.is_owner {
+            return Ok(());
+        }
+        Err(Error::Usage(format!(
+            "Only bot owners can do that. (Your {} user ID is `{}`; the bot's host can add it \
+             to BOTSU_OWNERS.)",
+            self.message.platform, self.message.author.id
+        )))
     }
 }
 

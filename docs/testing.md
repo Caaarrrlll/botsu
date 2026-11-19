@@ -115,6 +115,75 @@ INFO botsu_discord: connected to Discord user=botsu-dev guilds=3
 
 Report anything odd with the log output. `RUST_LOG=debug` shows every command run.
 
+## 5. Alerts (phase 2)
+
+### Setup
+
+1. **Owners.** Only user IDs in `BOTSU_OWNERS` can add or remove alerts. To find yours, run
+   `!tube add x` on each platform: the bot answers with your user ID. Put both IDs in `.env`
+   (`BOTSU_OWNERS=123...,157...`) and restart the bot.
+2. **Twitch (optional).** At <https://dev.twitch.tv/console/apps> → **Register Your Application**:
+   any name, OAuth Redirect URL `http://localhost`, category **Chat Bot**, client type
+   **Confidential**. Open it with **Manage**, copy the **Client ID**, click **New Secret** and copy
+   it. Put them in `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` and restart. The log says
+   `Twitch alerts enabled`; a wrong secret stops the bot at startup with a clear message.
+3. **YouTube API key (recommended).** In <https://console.cloud.google.com>: create a project →
+   **APIs & Services → Library** → **YouTube Data API v3** → **Enable**; then **Credentials →
+   Create credentials → API key**, and restrict the key to the YouTube Data API v3. Put it in
+   `YOUTUBE_API_KEY` and restart; the log says `YouTube Data API enabled`. Without it, `!tube add`
+   only takes channel links or `UC...` IDs, and live streams post as ordinary uploads.
+4. The database is created at `data/botsu.db` in the repo (ignored by git). Delete it to start over.
+
+### Commands
+
+```
+!tube add <channel link | @handle | channel ID> [#channel]
+!tube remove <name | @handle | channel ID>
+!tube list
+!tube shorts <name | channel ID> on|off   ← Shorts are off by default
+!twitch add <name | twitch.tv link> [#channel]
+!twitch remove <name>
+!twitch list
+!tube import [#channel]      ← then paste the other bot's list on the following lines
+!twitch import [#channel]    ← same message, list on the following lines
+```
+
+Without `#channel`, alerts go to the channel the command was typed in. The bot first posts a
+short notice in the target channel; if it can't post there, nothing is saved.
+
+**Import** reads channel IDs (`UC...`) from any text, such as Red's `tube list` output, and Twitch names
+from lists like `a, b and c`. It keeps the channel layout of the old bot's lists:
+
+- Red's `tube list` headings (`Tube Subs for my-go-lives (1285548198298910812)`) → that channel ID.
+- Red's `streamalert list` headings (`#stream-plugs`, or a bare `stream-plugs`) → the channel with
+  that name in this server. Lines that only say `Twitch` are ignored.
+- Anything before a heading → the channel the command was typed in.
+- `!tube import #channel` puts everything into that one channel instead.
+
+Copy Red's output from Discord and paste it after the command. If the paste has `youtube:` /
+`twitch:` headings, each command only reads its own section, so one paste works for both. The bot
+test-posts once in each target channel; a group whose channel doesn't exist or can't be posted in
+is skipped and listed. Nothing already published or already live is posted.
+
+### Checklist
+
+| Test | Discord | Fluxer |
+|---|---|---|
+| Non-owner gets "Only bot owners can do that" with their ID | | |
+| `!tube add @SomeChannel` replies with the channel name and latest video, no flood of old videos | | |
+| A new Short is not posted; after `!tube shorts <name> on` it is | | |
+| A live stream posts "is live on YouTube"; a scheduled one posts only when it starts | | |
+| `!tube add <link> #other-channel` posts the notice in the other channel | | |
+| `!tube list` shows it; `!tube remove <name>` removes it | | |
+| `!tube import` and `!twitch import` with the old bot's list: summary shows added / skipped | | |
+| A new upload appears within ~20 min (YouTube caches the feed up to ~15 min) | | |
+| Restarting the bot doesn't repost anything | | |
+| `!twitch add <streamer>` says live/offline correctly | | |
+| A streamer going live is posted once (within ~2 min), not again on restart | | |
+
+Quick way to see an alert without waiting for a real upload: subscribe to a channel that posts
+often (news channels upload many times a day), or to a big streamer who's about to go live.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -125,3 +194,6 @@ Report anything odd with the log output. `RUST_LOG=debug` shows every command ru
 | `Message Content intent is not enabled for this bot` | Turn it on in the developer portal (Bot → Privileged Gateway Intents) and **Save Changes** |
 | Bot online on Discord but never answers | Message Content intent off, or no permission to send in that channel |
 | `... starts with a quote` | Remove quotes from the env file |
+| `Twitch rejected TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET` | Copy both again from the Twitch console; a new secret replaces the old one |
+| `I can't post in <#...>` | Give the bot Send Messages (and View Channel) in that channel |
+| `couldn't find a channel ID on ...` | Use the channel's link or its `UC...` ID instead of a handle |

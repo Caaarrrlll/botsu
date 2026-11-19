@@ -71,6 +71,16 @@ pub trait ChatAdapter: Send + Sync {
         })
     }
 
+    /// Finds a channel in a server by name (case-insensitive, without `#`). Used when
+    /// importing lists that name channels instead of linking them.
+    async fn find_channel(&self, guild_id: &str, name: &str) -> Result<Option<String>> {
+        let _ = (guild_id, name);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "find_channel",
+        })
+    }
+
     async fn bulk_delete(&self, channel_id: &str, message_ids: &[String]) -> Result<()> {
         let _ = (channel_id, message_ids);
         Err(Error::Unsupported {

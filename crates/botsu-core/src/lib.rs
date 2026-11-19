@@ -8,9 +8,11 @@
 //! built; see `docs/handover.md` section 8 for the phase order.
 
 pub mod adapter;
+pub mod alerts;
 pub mod bot;
 pub mod command;
 pub mod error;
+pub mod storage;
 
 pub use adapter::{Author, Capabilities, ChatAdapter, IncomingMessage, Platform};
 pub use bot::Bot;

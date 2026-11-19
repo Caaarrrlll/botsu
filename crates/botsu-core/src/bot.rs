@@ -1,21 +1,27 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, RwLock};
 
-use crate::adapter::{ChatAdapter, IncomingMessage};
+use crate::adapter::{ChatAdapter, IncomingMessage, Platform};
 use crate::command::{self, Command, CommandContext, Ping};
 use crate::error::Error;
 
 /// The shared, platform-neutral bot. One instance serves every adapter.
 pub struct Bot {
     prefix: String,
+    /// User IDs (any platform) allowed to run admin commands. Phase 4 replaces this with roles.
+    owners: HashSet<String>,
     commands: BTreeMap<&'static str, Arc<dyn Command>>,
+    /// Connected platforms, for sending outside a command (alerts).
+    chats: RwLock<HashMap<Platform, Arc<dyn ChatAdapter>>>,
 }
 
 impl Bot {
-    pub fn new(prefix: impl Into<String>) -> Self {
+    pub fn new(prefix: impl Into<String>, owners: impl IntoIterator<Item = String>) -> Self {
         let mut bot = Self {
             prefix: prefix.into(),
+            owners: owners.into_iter().collect(),
             commands: BTreeMap::new(),
+            chats: RwLock::default(),
         };
         bot.register(Ping);
         bot
@@ -25,11 +31,32 @@ impl Bot {
         &self.prefix
     }
 
+    pub fn has_owners(&self) -> bool {
+        !self.owners.is_empty()
+    }
+
     pub fn register(&mut self, command: impl Command + 'static) {
         let name = command.name();
         if self.commands.insert(name, Arc::new(command)).is_some() {
             tracing::warn!(command = name, "command registered twice; last one wins");
         }
+    }
+
+    /// Adapters call this once connected, so features can post without a triggering message.
+    pub fn register_chat(&self, chat: Arc<dyn ChatAdapter>) {
+        let platform = chat.platform();
+        self.chats
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(platform, chat);
+    }
+
+    pub fn chat(&self, platform: Platform) -> Option<Arc<dyn ChatAdapter>> {
+        self.chats
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&platform)
+            .cloned()
     }
 
     /// Entry point for adapters: call this for every message received.
@@ -60,6 +87,8 @@ impl Bot {
 
         let ctx = CommandContext {
             chat: chat.clone(),
+            is_owner: self.owners.contains(&message.author.id),
+            prefix: self.prefix.clone(),
             message,
             args,
         };

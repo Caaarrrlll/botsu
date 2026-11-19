@@ -2,6 +2,8 @@
 
 Replaces a Red-DiscordBot instance ("botsu!", prefix `$`). Background: docs/handover.md.
 **Plan and phase checklists: docs/roadmap.md (the source of truth for what's next).**
+Technical overview (crates, DB tables, alert rules): docs/architecture.md. Update it when the
+schema, adapter trait or alert rules change.
 
 ## Decisions (differ from the handover's recommendation)
 - **Rust from the start**, not Python first. Accepting churn from young platform libraries.
@@ -22,8 +24,18 @@ Replaces a Red-DiscordBot instance ("botsu!", prefix `$`). Background: docs/hand
   (Docker restarts it).
 - `spikes/`: throwaway experiments (phase 0). Not workspace members.
 
+## Phase 2 (alerts) shape
+- `botsu-core/src/storage.rs`: SQLite via rusqlite (sync behind a Mutex; queries are tiny).
+  Migrations are an append-only list; `PRAGMA user_version` tracks what's applied.
+- `botsu-core/src/alerts/`: `youtube.rs` (RSS feed for detection + Data API for handles and live state; no page scraping, by user preference), `twitch.rs` (Helix, app
+  token), `mod.rs` (pollers, dedup rules, delivery), `commands.rs` (`tube`, `twitch`).
+- Adapters call `bot.register_chat(..)` once connected so pollers can post; `bot.chat(platform)`.
+- Admin commands use `ctx.require_owner()` (`BOTSU_OWNERS`) until phase 4 permissions.
+- Network test: `cargo test -p botsu-core -- --ignored` (hits real YouTube).
+
 ## Current phase
-Phase 1: `!ping` works live on Discord and the user's self-hosted Fluxer (2026-11-19). Remaining: Docker
+Phase 2 (alerts): code done, live test pending (docs/testing.md section 5). Phase 1: `!ping` works live on
+Discord and the user's self-hosted Fluxer (2026-11-19); remaining there: Docker
 image build + Unraid run, rest of the testing checklist. Test targets: self-hosted Fluxer (Unraid) and
 several Discord servers, following docs/testing.md. Red still runs on those Discord servers with
 `$`, so botsu runs with `BOTSU_PREFIX=!` (code default stays `$`). Red is not to be changed until

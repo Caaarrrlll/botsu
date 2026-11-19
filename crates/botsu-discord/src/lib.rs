@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use botsu_core::{Author, Bot, Capabilities, ChatAdapter, Error, IncomingMessage, Platform};
 use serenity::all::{
-    ChannelId, Client, Context, EventHandler, GatewayIntents, Http, Message, MessageId, Ready,
+    ChannelId, Client, Context, EventHandler, GatewayIntents, GuildId, Http, Message, MessageId,
+    Ready,
 };
 use serenity::async_trait;
 
@@ -67,6 +68,17 @@ impl ChatAdapter for DiscordChat {
             .delete_message(&self.http, MessageId::new(snowflake(message_id)?))
             .await
             .map_err(err)
+    }
+
+    async fn find_channel(&self, guild_id: &str, name: &str) -> botsu_core::Result<Option<String>> {
+        let channels = GuildId::new(snowflake(guild_id)?)
+            .channels(&self.http)
+            .await
+            .map_err(err)?;
+        Ok(channels
+            .values()
+            .find(|c| c.name.eq_ignore_ascii_case(name))
+            .map(|c| c.id.to_string()))
     }
 
     /// Discord only bulk-deletes messages younger than 14 days, 2–100 per call.
@@ -136,9 +148,10 @@ pub async fn run(config: DiscordConfig, bot: Arc<Bot>) -> Result<(), Error> {
         | GatewayIntents::MESSAGE_CONTENT;
 
     let mut client = Client::builder(&config.token, intents)
-        .event_handler(Handler { bot })
+        .event_handler(Handler { bot: bot.clone() })
         .await
         .map_err(err)?;
+    bot.register_chat(Arc::new(DiscordChat::new(client.http.clone())));
     client.start().await.map_err(|e| match e {
         serenity::Error::Gateway(serenity::gateway::GatewayError::DisallowedGatewayIntents) => err(
             "Message Content intent is not enabled for this bot: Discord developer portal → \

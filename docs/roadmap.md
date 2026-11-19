@@ -69,13 +69,19 @@ Already done: workspace, `botsu-core`, `botsu-fluxer`, binary, env config, Docke
 
 The easiest cross-platform feature: "post a message in channel X". Replaces Red's Tube and streams cogs.
 
-- [ ] **Storage:** SQLite in `/data/botsu.db` with migrations embedded in the binary (for example `sqlx` or `rusqlite` + `refinery`). Tables: subscriptions, seen items, per-server settings.
-- [ ] **Scheduler:** a polling task in the core with jittered intervals, per-source backoff on errors.
-- [ ] **Tube:** poll `https://www.youtube.com/feeds/videos.xml?channel_id=<id>`, no API key. Record seen video IDs; on first subscribe, mark existing videos as seen so the channel isn't flooded.
-- [ ] **Streams (Twitch):** Helix API with an app access token (`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`). Polling first; EventSub needs a public HTTPS endpoint (Caddy) and can come later.
-- [ ] **Streams (YouTube live):** best effort. No clean free API; start with RSS/page heuristics, and drop it if it's unreliable.
-- [ ] Commands: `$tube add|remove|list`, `$streams add|remove|list`, choosing the target channel. Admin-only (simple check until phase 4 adds permissions).
-- [ ] Alerts can target a channel on either platform; one subscription can post to both.
+- [x] **Storage:** SQLite (`rusqlite`, bundled) in `<BOTSU_DATA_DIR>/botsu.db` (`/data` in Docker), migrations built into the binary (`storage.rs`). Tables: subscriptions, seen items, source state. Per-server settings come with phase 4.
+- [x] **Scheduler:** one polling task per source type, ±10% jitter, intervals configurable (`YOUTUBE_POLL_SECONDS`, `TWITCH_POLL_SECONDS`). Per-source error backoff not done yet: a failing feed is just logged and retried next cycle.
+- [x] **Tube:** RSS feed, no API key. Accepts a channel link, `@handle` or channel ID. Everything in the feed at subscribe time counts as seen; uploads older than 7 days are never posted.
+- [x] **Streams (Twitch):** Helix with an app access token (auto-renewed). A stream restarting within 15 minutes isn't announced twice. EventSub still possible later.
+- [x] **Streams (YouTube live):** via the Data API (`YOUTUBE_API_KEY`): live streams post as "is live", scheduled streams/premieres wait until they start. RSS stays the detector (no quota).
+- [x] **Shorts:** detected from the feed's `/shorts/` links; off by default per subscription, `tube shorts <name> on|off`.
+- [x] Commands: `tube add|remove|list`, `twitch add|remove|list` (`[#channel]` picks the target; the bot test-posts there first). Add/remove limited to `BOTSU_OWNERS` until phase 4.
+- [x] Alerts target channels on either platform; the same source can post to Discord and Fluxer channels.
+- [ ] Live test: a real upload and a real stream posted once on both platforms, nothing reposted after a restart.
+- [x] `tube import` / `twitch import`: create subscriptions from a pasted list (Red's `tube list` format, Twitch names with `and`/commas, `youtube:`/`twitch:` sections).
+- [ ] Optional, Red parity: custom alert message and role mention per subscription.
+- [ ] Optional: `tube remove <name> #channel` to remove a source from one channel only.
+- [ ] Optional: record the Fluxer instance on subscriptions, if the bot ever needs to move between instances with the same database (see architecture.md, `subscriptions`).
 
 **Done when:** new uploads and live streams are posted once on Discord and Fluxer, and a restart doesn't repost anything.
 
@@ -179,7 +185,7 @@ Updated as phases land. ✅ works · 🟡 partial · ❌ not possible · — not
 |---|---|---|---|
 | Prefix commands | ✅ | ✅ (self-hosted) | — |
 | Slash commands | optional | ❌ (not in fluxer-rust 0.2) | — |
-| Alerts | — | — | — |
+| Alerts | ✅ (code, live test pending) | ✅ (code, live test pending) | — |
 | Permissions / cleanup / admin | — | — | — |
 | Moderation | — | — | — |
 | Music | — | — (phase 0 decides) | — |

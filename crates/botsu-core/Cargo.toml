@@ -7,8 +7,17 @@ license.workspace = true
 publish.workspace = true
 
 # Rule: this crate must never depend on a platform library (fluxer-rust, serenity, ...).
+# General-purpose crates (HTTP, SQLite, XML) are fine: features like alerts live here.
 [dependencies]
 async-trait.workspace = true
+reqwest.workspace = true
+roxmltree.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
 thiserror.workspace = true
+time.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
