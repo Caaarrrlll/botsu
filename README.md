@@ -53,6 +53,9 @@ Getting tokens and testing against live servers: [docs/testing.md](docs/testing.
 
 ## Docker / Unraid
 
+Step-by-step for Unraid (secrets file, appdata permissions, getting the image, updating):
+[docs/install-unraid.md](docs/install-unraid.md).
+
 ```sh
 docker build -t botsu .
 docker run -d --name botsu --restart unless-stopped \
