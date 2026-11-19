@@ -2,7 +2,11 @@
 //! On Unraid these come from the root-only env file passed with `--env-file`.
 //! A platform is enabled by setting its token; at least one is required.
 
+use std::path::PathBuf;
+use std::time::Duration;
+
 use anyhow::{bail, Result};
+use botsu_core::alerts::AlertSettings;
 use botsu_discord::DiscordConfig;
 use botsu_fluxer::{FluxerConfig, FluxerEndpoint};
 
@@ -12,8 +16,28 @@ pub const DEFAULT_PREFIX: &str = "$";
 
 pub struct Config {
     pub prefix: String,
+    pub owners: Vec<String>,
+    pub data_dir: PathBuf,
     pub discord: Option<DiscordConfig>,
     pub fluxer: Option<FluxerConfig>,
+    pub youtube_api_key: Option<String>,
+    /// (client ID, client secret)
+    pub twitch: Option<(String, String)>,
+    pub alerts: AlertSettings,
+}
+
+/// Reads a poll interval in seconds, with a floor so nobody hammers YouTube or Twitch.
+fn interval(name: &str, default: u64, min: u64) -> Result<Duration> {
+    let secs = match var(name) {
+        None => default,
+        Some(v) => v
+            .parse::<u64>()
+            .map_err(|_| anyhow::anyhow!("{name} must be a number of seconds (got {v:?})"))?,
+    };
+    if secs < min {
+        bail!("{name} must be at least {min} seconds (got {secs})");
+    }
+    Ok(Duration::from_secs(secs))
 }
 
 fn var(name: &str) -> Option<String> {
@@ -80,17 +104,52 @@ impl Config {
             bail!("no platform configured: set DISCORD_TOKEN and/or FLUXER_TOKEN");
         }
 
+        let twitch = match (secret("TWITCH_CLIENT_ID")?, secret("TWITCH_CLIENT_SECRET")?) {
+            (Some(id), Some(secret)) => Some((id, secret)),
+            (None, None) => None,
+            _ => bail!("set both TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, or neither"),
+        };
+
         Ok(Self {
             prefix,
+            owners: var("BOTSU_OWNERS")
+                .map(|v| parse_owners(&v))
+                .unwrap_or_default(),
+            // Relative paths are relative to where the bot starts (the repo when run locally).
+            // The Docker image sets /data.
+            data_dir: var("BOTSU_DATA_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("data")),
             discord,
             fluxer,
+            youtube_api_key: secret("YOUTUBE_API_KEY")?,
+            twitch,
+            alerts: AlertSettings {
+                youtube_interval: interval("YOUTUBE_POLL_SECONDS", 300, 60)?,
+                twitch_interval: interval("TWITCH_POLL_SECONDS", 120, 30)?,
+            },
         })
     }
 }
 
+/// `"123, 456 789"` → `["123", "456", "789"]`. IDs from any platform can be mixed.
+fn parse_owners(v: &str) -> Vec<String> {
+    v.split([',', ' ', ';'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::origin;
+    use super::{origin, parse_owners};
+
+    #[test]
+    fn owners_list() {
+        assert_eq!(parse_owners("123, 456 789;"), vec!["123", "456", "789"]);
+        assert!(parse_owners(" , ").is_empty());
+    }
 
     #[test]
     fn origin_strips_paths() {

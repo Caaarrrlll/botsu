@@ -16,7 +16,12 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates libglib2.0-0 libva2 libva-drm2 \
     && rm -rf /var/lib/apt/lists/*
-RUN useradd --system --uid 10001 botsu
+RUN useradd --system --uid 10001 botsu \
+    && mkdir /data && chown botsu /data && chmod 0777 /data
 COPY --from=build /botsu /usr/local/bin/botsu
+# SQLite database (alert subscriptions, posted items). Mount a volume here to keep it.
+# World-writable so the image also runs with --user 99:100 (Unraid) or any other user.
+ENV BOTSU_DATA_DIR=/data
+VOLUME /data
 USER botsu
 ENTRYPOINT ["/usr/local/bin/botsu"]

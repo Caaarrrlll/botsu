@@ -19,6 +19,11 @@ pub enum Error {
     /// Bad user input to a command; the message is shown to the user.
     #[error("{0}")]
     Usage(String),
+
+    /// Something on our side failed (database, outside service). Logged; the user
+    /// sees a generic message.
+    #[error("{0}")]
+    Internal(String),
 }
 
 impl Error {
@@ -27,5 +32,15 @@ impl Error {
             platform,
             message: err.to_string(),
         }
+    }
+
+    pub fn internal(context: &str, err: impl std::fmt::Display) -> Self {
+        Self::Internal(format!("{context}: {err}"))
+    }
+}
+
+impl From<rusqlite::Error> for Error {
+    fn from(e: rusqlite::Error) -> Self {
+        Self::internal("database", e)
     }
 }
