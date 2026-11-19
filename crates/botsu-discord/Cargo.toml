@@ -10,5 +10,7 @@ publish.workspace = true
 botsu-core.workspace = true
 serenity.workspace = true
 songbird.workspace = true
+# Only here to enable its PCM decoder for songbird (see the workspace Cargo.toml).
+symphonia.workspace = true
 tokio.workspace = true
 tracing.workspace = true
