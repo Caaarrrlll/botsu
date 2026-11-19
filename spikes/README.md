@@ -23,7 +23,7 @@ container; nothing to install locally. The image includes ffmpeg.
    | Command | |
    |---|---|
    | `!music join` | joins **your** voice channel (`!music join <channel id>` to pick one) |
-   | `!music play` | plays a 10-second 440 Hz test tone (`!music play <url>` for a direct audio link) |
+   | `!music test` | plays a 10-second 440 Hz test tone (`!music test <url>` for a direct audio link) |
    | `!music stop` / `!music leave` | stop / leave (it also leaves by itself after 10 minutes without sound) |
    | `!music where` | who the bot can see in voice; empty means voice states aren't arriving |
 

@@ -6,10 +6,12 @@ use std::time::Duration;
 use anyhow::Result;
 use botsu_core::alerts::{self, twitch::Twitch, youtube::YouTubeApi, TubeCommand, TwitchCommand};
 use botsu_core::moderation::{self, ModTools};
+use botsu_core::music::{self, Music};
 use botsu_core::permissions::Permissions;
 use botsu_core::server::{self, SetCommand};
 use botsu_core::storage::Store;
-use botsu_core::voice::{MusicCommand, VoiceAdapter};
+use botsu_core::voice::VoiceAdapter;
+use botsu_core::ytdlp::{self, YtDlp};
 use botsu_core::Bot;
 use botsu_discord::DiscordVoice;
 use botsu_fluxer::FluxerVoice;
@@ -105,7 +107,9 @@ async fn main() -> Result<()> {
     if let Some(v) = &fluxer_voice {
         voices.push(v.clone());
     }
-    bot.register(MusicCommand::new(voices));
+    let ytdlp = YtDlp::new(&config.data_dir, config.ytdlp.clone(), http.clone());
+    ytdlp::spawn_maintenance(ytdlp.clone());
+    bot.register(music::group(&Music::new(voices, ytdlp)));
     let bot = Arc::new(bot);
 
     // One task per platform. If any adapter dies, exit so Docker restarts us.

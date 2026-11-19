@@ -42,6 +42,8 @@ pub struct Config {
     /// (client ID, client secret)
     pub twitch: Option<(String, String)>,
     pub alerts: AlertSettings,
+    /// `BOTSU_YTDLP`: a yt-dlp to use instead of botsu's own copy in `<data dir>/bin`.
+    pub ytdlp: Option<PathBuf>,
 }
 
 /// Where values come from: the process environment, then the settings file.
@@ -215,6 +217,7 @@ impl Config {
                 youtube_interval: vars.interval("YOUTUBE_POLL_SECONDS", 300, 60)?,
                 twitch_interval: vars.interval("TWITCH_POLL_SECONDS", 120, 30)?,
             },
+            ytdlp: vars.get("BOTSU_YTDLP").map(PathBuf::from),
         }))
     }
 }

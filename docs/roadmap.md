@@ -154,15 +154,17 @@ search/URL ──► yt-dlp (subprocess) ──► stream URL ──► ffmpeg �
                                                                                     └─ Fluxer: LiveKit (also Stoat later)
 ```
 
-- [ ] **Voice adapter trait** in the core: `join`, `leave`, `play(stream)`, `pause`, `resume`, `stop`; events `track_end`, `disconnected`.
-- [ ] **Queue** in the core, per server: play, skip, stop, queue, now-playing, remove, clear, volume. Leave after a configurable idle time.
-- [ ] **yt-dlp** as a subprocess, run off the event loop. Resolve the stream URL **when a track starts**, not when it's queued (URLs expire). Search via `ytsearch1:`.
-- [ ] **ffmpeg** with `-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5`.
-- [ ] **yt-dlp updatable without an image rebuild:** install it into `/data` (or a volume) on first start and update with `$ytdlp update` or on a schedule; the image ships only Python and ffmpeg.
-- [ ] Optional cookies file in `/data` for YouTube anti-bot checks.
-- [ ] **Discord voice:** songbird, with DAVE confirmed in phase 0.
-- [ ] **Fluxer voice:** LiveKit. fluxer-rust's `play_music` hardcodes its ffmpeg arguments and keeps its audio source private, so expect to publish our own audio track on `conn.room` (or fork the crate).
-- [ ] Update the Docker image and both install guides with ffmpeg and yt-dlp.
+- [x] **Voice adapter trait** in the core: `join`, `leave`, `play(source)`, `stop`, `is_playing`, `is_connected`. Track end is detected by polling `is_playing` once a second (works the same on both platforms). No pause/resume yet (fluxer-rust's playback can't pause).
+- [x] **Queue** in the core, per server (`music.rs`): `music play|skip|stop|queue|now|remove|clear|shuffle|join|leave`. Playlists up to 100 tracks; queue up to 500. Anyone in the bot's voice channel controls it, mods from anywhere. Leaves after 10 minutes without sound.
+- [ ] Volume (Discord only: songbird can, fluxer-rust's `play_music` can't).
+- [x] **yt-dlp** as a subprocess (`ytdlp.rs`), off the event loop. Lookup with `--flat-playlist -J` when queued (title, length, page URL); the stream URL is resolved **when a track starts**. Search via `ytsearch1:`.
+- [x] **ffmpeg** with `-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5` (Discord; Fluxer's `play_music` can't take them yet).
+- [x] **yt-dlp updatable without an image rebuild:** botsu downloads the standalone build into `/data/bin` on first start, runs `yt-dlp -U` daily and on `music update` (bot owners). `BOTSU_YTDLP` uses another copy. The image ships Deno (yt-dlp needs a JavaScript runtime for YouTube since 2025.11).
+- [ ] Live test on Discord and Fluxer: checklist in [testing.md](testing.md) section 8.
+- [ ] Optional cookies file in `/data` for YouTube anti-bot checks (only if YouTube starts refusing the server's IP).
+- [x] **Discord voice:** songbird, with DAVE confirmed in phase 0.
+- [ ] **Fluxer voice:** uses fluxer-rust's `play_music` for now. Its hardcoded ffmpeg arguments have no reconnect flags, so long tracks may cut off on a network hiccup; if they do, publish our own audio track on `conn.room` (or fork the crate).
+- [x] Docker image ships Deno (yt-dlp downloads itself); the native Linux guide lists ffmpeg and Deno.
 - [ ] Measure memory while playing on both platforms; compare with the handover's Lavalink figures.
 
 **Done when:** play, queue and skip work on Discord and Fluxer, playback survives a network hiccup, and yt-dlp can be updated without a new image.

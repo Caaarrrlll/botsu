@@ -43,7 +43,7 @@ schema, adapter trait or alert rules change.
 ## Voice (phase 0 test, phase 6 groundwork)
 - `VoiceAdapter` in botsu-core/src/voice.rs; `DiscordVoice` (songbird 0.6, DAVE) and `FluxerVoice` (LiveKit).
   Idle timer: leaves after 10 min without sound (`IDLE_TIMEOUT`, checked every 30 s, one watcher per server).
-  `!music join|play|stop|leave|where` (bot owners) tests it on the deployed container. ffmpeg in the image
+  `!music test|where` (bot owners) test it on the deployed container. ffmpeg in the image
   is a static binary from mwader/static-ffmpeg (Debian's package made the image 830 MB). Build needs
   libopus-dev (Docker build stage, CI); runtime needs libopus0. Discord plays ffmpeg's raw f32 PCM
   through songbird's `RawAdapter`, which needs symphonia's `pcm` feature (botsu-discord enables it;
@@ -54,11 +54,15 @@ schema, adapter trait or alert rules change.
   mod-log via `set modlog`, hierarchy checks in `ModTools::check_target`, temp-ban scheduler.
 - Fluxer kick/ban/timeout go through `FluxerChat::call` (fluxer-rust can't send `X-Audit-Log-Reason`).
 
+## Music (phase 6)
+- `botsu-core/src/music.rs` (queue, player task per server, `!music` group) and `ytdlp.rs` (botsu's own
+  yt-dlp in `<data dir>/bin`, updated daily; `BOTSU_YTDLP` overrides). Image ships Deno for YouTube.
+- Commands are grouped: `!mod …`, `!admin …`, `!music …` (`command::Group`).
+
 ## Current phase
 Running on Unraid from the Docker Hub image (CI publishes on push). Code done, live tests pending:
 phase 2 alerts (testing.md 5, waiting for a real upload/stream), phase 4 server tools (6), phase 5
-moderation (7). Phase 0: Fluxer voice works; Discord voice fix (symphonia pcm) awaiting a retest.
-Next: phase 6 (music). Test targets: self-hosted Fluxer (Unraid) and
+moderation (7), phase 6 music (8). Phase 0 voice works on both. Next after music: phase 7 (cutover). Test targets: self-hosted Fluxer (Unraid) and
 several Discord servers, following docs/testing.md. Red still runs on those Discord servers with
 `$`, so botsu runs with `BOTSU_PREFIX=!` (code default stays `$`). Red is not to be changed until
 botsu is definitely replacing it (phase 7). Phase 0 spikes are still open. Keep the checkboxes in

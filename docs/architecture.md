@@ -76,14 +76,28 @@ them.
 | | Discord (`DiscordVoice`) | Fluxer (`FluxerVoice`) |
 |---|---|---|
 | Transport | songbird 0.6 (Discord voice, DAVE via `davey`) | LiveKit room via fluxer-rust |
-| Audio path | ffmpeg → 48 kHz stereo f32 PCM → songbird `RawAdapter` (no decoders compiled in) | fluxer-rust `play_music` (ffmpeg → s16 PCM → LiveKit) |
+| Audio path | ffmpeg → 48 kHz stereo f32 PCM → songbird `RawAdapter` (needs symphonia's `pcm` feature) | fluxer-rust `play_music` (ffmpeg → s16 PCM → LiveKit) |
 | Who is in voice | GUILD_CREATE snapshot + VOICE_STATE_UPDATE (no serenity cache) | GUILD_SYNC / PASSIVE_UPDATES snapshots + VOICE_STATE_UPDATE |
 
-`main` creates the voice adapters before the platforms connect, hands them to the `music` command
-(a manual test, bot owners only) and passes each to its platform's `run`, which fills in the
-connection and voice states. Phase 6 (music) builds its queue on this interface. The Docker image
+`main` creates the voice adapters before the platforms connect, hands them to `Music` and passes
+each to its platform's `run`, which fills in the connection and voice states. The Docker image
 carries a static ffmpeg binary (`mwader/static-ffmpeg`) because Debian's package adds ~650 MB of
 desktop libraries.
+
+### Music
+
+`music.rs`: a `Guild` per (platform, server) with a queue, the current track, the text channel
+for "now playing" and a player task. `music play` looks the query up with yt-dlp
+(`--flat-playlist -J`: title, length, page URL; `ytsearch1:` for words) and queues it. The player
+resolves the page URL to a stream URL (`-f bestaudio/best -g`) only when the track starts,
+calls `VoiceAdapter::play`, then polls `is_playing` every second (after a 5 s grace) until it ends
+or a skip (`Notify`, new per player task) arrives. Nothing is stored in the database; a restart
+empties queues.
+
+`ytdlp.rs`: botsu downloads the standalone yt-dlp into `<data dir>/bin` (no Python needed),
+updates it with `-U` daily and on `music update`; `BOTSU_YTDLP` uses another copy. YouTube needs a
+JavaScript runtime since yt-dlp 2025.11: the image copies Deno from `denoland/deno:bin-*` and
+points `XDG_CACHE_HOME`/`DENO_DIR` at `/data/cache` (the bot user has no writable home).
 
 ## Data model
 
