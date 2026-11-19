@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.98-bookworm AS build
+FROM rust:1.100-bookworm AS build
 # Build deps for livekit/libwebrtc (pulled in by fluxer-rust).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         pkg-config libglib2.0-dev libva-dev \
