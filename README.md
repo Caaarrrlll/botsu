@@ -42,7 +42,7 @@ All configuration is environment variables; see [.env.example](.env.example).
 | `FLUXER_URL` | no | your self-hosted instance's web address; API URL is discovered. Unset = fluxer.app |
 | `FLUXER_API_URL` | no | explicit API base with `/v1`; overrides `FLUXER_URL` |
 | `BOTSU_PREFIX` | no | `$` |
-| `BOTSU_OWNERS` | for import | user IDs (any platform) allowed to import alert lists and manage anyone's alerts |
+| `BOTSU_OWNERS` | for import | user IDs (any platform) allowed to import alert lists and toggle Shorts |
 | `YOUTUBE_API_KEY` | recommended | YouTube Data API v3 key: @handles, live/upcoming stream detection |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | for Twitch alerts | from dev.twitch.tv; both or neither |
 | `BOTSU_DATA_DIR` | no | `data` (`/data` in Docker): SQLite database |

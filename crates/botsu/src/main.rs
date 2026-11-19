@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
 
     let mut bot = Bot::new(config.prefix.clone(), config.owners);
     if !bot.has_owners() {
-        tracing::warn!("BOTSU_OWNERS is empty: nobody can run tube/twitch import. Run one to see your user ID.");
+        tracing::warn!("BOTSU_OWNERS is empty: nobody can run tube/twitch import or tube shorts. Run one to see your user ID.");
     }
     bot.register(TubeCommand::new(
         store.clone(),

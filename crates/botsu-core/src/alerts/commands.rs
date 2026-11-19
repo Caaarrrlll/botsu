@@ -102,49 +102,8 @@ fn import_summary(kind: &str, added: &[String], existing: &[String], failed: &[S
     }
 }
 
-// --- Permissions ------------------------------------------------------------------------------
-//
-// add, list: anyone. remove, shorts: whoever added that alert, the server owner, bot owners.
-// import: bot owners only (checked with ctx.require_owner()).
-
-const NOT_YOURS: &str =
-    "Only the person who added that alert or the server owner can change or remove it.";
-
-/// Splits matching subscriptions into those the caller may change, and how many belong to
-/// someone else. The server owner is only looked up when it matters.
-async fn permitted(ctx: &CommandContext, subs: Vec<Subscription>) -> (Vec<Subscription>, usize) {
-    let author = &ctx.message.author.id;
-    if ctx.is_owner || subs.iter().all(|s| &s.created_by == author) {
-        return (subs, 0);
-    }
-    if is_server_owner(ctx).await {
-        return (subs, 0);
-    }
-    let (mine, others): (Vec<_>, Vec<_>) = subs.into_iter().partition(|s| &s.created_by == author);
-    (mine, others.len())
-}
-
-async fn is_server_owner(ctx: &CommandContext) -> bool {
-    let Some(guild) = ctx.message.guild_id.as_deref() else {
-        return false;
-    };
-    match ctx.chat.guild_owner(guild).await {
-        Ok(owner) => owner.as_deref() == Some(ctx.message.author.id.as_str()),
-        Err(e) => {
-            tracing::warn!(error = %e, guild, "couldn't look up the server owner");
-            false
-        }
-    }
-}
-
-fn left_alone(others: usize) -> String {
-    match others {
-        0 => String::new(),
-        n => format!(
-            " {n} added by someone else were left alone (only they or the server owner can change those)."
-        ),
-    }
-}
+// Permissions (kept lax for now, phase 4 adds roles): add, list and remove are open to anyone;
+// import and `tube shorts` need a bot owner (ctx.require_owner(), BOTSU_OWNERS).
 
 fn scope(ctx: &CommandContext) -> Scope<'_> {
     Scope::of(ctx.message.guild_id.as_deref(), &ctx.message.channel_id)
@@ -348,8 +307,9 @@ impl TubeCommand {
     }
 
     /// `shorts <name | channel ID> on|off`: whether that channel's Shorts are posted too.
-    /// Allowed for whoever added the alert, the server owner and bot owners.
+    /// Bot owners only.
     async fn shorts(&self, ctx: &CommandContext, args: &str) -> Result<()> {
+        ctx.require_owner()?;
         let (source, setting) = args
             .trim()
             .rsplit_once(char::is_whitespace)
@@ -367,26 +327,18 @@ impl TubeCommand {
                 ctx.prefix
             )));
         }
-        let (allowed, others) = permitted(ctx, found).await;
-        if allowed.is_empty() {
-            return Err(Error::Usage(NOT_YOURS.into()));
-        }
-        let ids: Vec<i64> = allowed.iter().map(|s| s.id).collect();
+        let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
         let n = self.store.set_include_shorts(&ids, on)?;
         let what = if on {
             "Shorts will be posted too"
         } else {
             "Shorts won't be posted"
         };
-        ctx.reply(&format!(
-            "{what} ({n} alert(s) updated).{}",
-            left_alone(others)
-        ))
-        .await?;
+        ctx.reply(&format!("{what} ({n} alert(s) updated)."))
+            .await?;
         Ok(())
     }
 
-    /// Allowed for whoever added the alert, the server owner and bot owners.
     async fn remove(&self, ctx: &CommandContext, source: &str) -> Result<()> {
         if source.is_empty() {
             return Err(Error::Usage(Self::usage(&ctx.prefix)));
@@ -398,17 +350,9 @@ impl TubeCommand {
                 ctx.prefix
             )));
         }
-        let (allowed, others) = permitted(ctx, found).await;
-        if allowed.is_empty() {
-            return Err(Error::Usage(NOT_YOURS.into()));
-        }
-        let ids: Vec<i64> = allowed.iter().map(|s| s.id).collect();
+        let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
         let n = self.store.delete_subscriptions(&ids)?;
-        ctx.reply(&format!(
-            "Removed {n} YouTube alert(s).{}",
-            left_alone(others)
-        ))
-        .await?;
+        ctx.reply(&format!("Removed {n} YouTube alert(s).")).await?;
         Ok(())
     }
 }
@@ -674,7 +618,6 @@ impl Command for TwitchCommand {
         let (sub, source, target) = split_args(&ctx);
         match sub.as_str() {
             "add" | "subscribe" => self.add(&ctx, &source, &target).await,
-            // Allowed for whoever added the alert, the server owner and bot owners.
             "remove" | "unsubscribe" | "delete" | "del" => {
                 if source.is_empty() {
                     return Err(Error::Usage(Self::usage(&ctx.prefix)));
@@ -692,17 +635,9 @@ impl Command for TwitchCommand {
                         ctx.prefix
                     )));
                 }
-                let (allowed, others) = permitted(&ctx, found).await;
-                if allowed.is_empty() {
-                    return Err(Error::Usage(NOT_YOURS.into()));
-                }
-                let ids: Vec<i64> = allowed.iter().map(|s| s.id).collect();
+                let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
                 let n = self.store.delete_subscriptions(&ids)?;
-                ctx.reply(&format!(
-                    "Removed {n} Twitch alert(s).{}",
-                    left_alone(others)
-                ))
-                .await?;
+                ctx.reply(&format!("Removed {n} Twitch alert(s).")).await?;
                 Ok(())
             }
             "list" => {
@@ -733,94 +668,5 @@ impl Command for TwitchCommand {
             }
             _ => Err(Error::Usage(Self::usage(&ctx.prefix))),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::adapter::{Author, Capabilities, ChatAdapter, IncomingMessage, Platform};
-
-    /// A platform where the server owner is "owner" and sending always works.
-    struct FakeChat;
-
-    #[async_trait]
-    impl ChatAdapter for FakeChat {
-        fn platform(&self) -> Platform {
-            Platform::Discord
-        }
-        fn capabilities(&self) -> Capabilities {
-            Capabilities::default()
-        }
-        async fn send_message(&self, _: &str, _: &str) -> Result<String> {
-            Ok("m".into())
-        }
-        async fn guild_owner(&self, _: &str) -> Result<Option<String>> {
-            Ok(Some("owner".into()))
-        }
-    }
-
-    fn ctx(author: &str, is_owner: bool) -> CommandContext {
-        CommandContext {
-            chat: Arc::new(FakeChat),
-            message: IncomingMessage {
-                platform: Platform::Discord,
-                guild_id: Some("g".into()),
-                channel_id: "c".into(),
-                message_id: "m".into(),
-                author: Author {
-                    id: author.into(),
-                    name: author.into(),
-                    is_bot: false,
-                },
-                content: String::new(),
-            },
-            args: String::new(),
-            is_owner,
-            prefix: "!".into(),
-        }
-    }
-
-    fn sub(id: i64, created_by: &str) -> Subscription {
-        Subscription {
-            id,
-            kind: AlertKind::YouTube,
-            source_id: "UC1".into(),
-            source_name: "n".into(),
-            source_key: "UC1".into(),
-            platform: Platform::Discord,
-            guild_id: Some("g".into()),
-            channel_id: "c".into(),
-            include_shorts: false,
-            created_by: created_by.into(),
-        }
-    }
-
-    fn ids(subs: &[Subscription]) -> Vec<i64> {
-        subs.iter().map(|s| s.id).collect()
-    }
-
-    #[tokio::test]
-    async fn adder_changes_only_their_own() {
-        let (ok, others) =
-            permitted(&ctx("alice", false), vec![sub(1, "alice"), sub(2, "bob")]).await;
-        assert_eq!(ids(&ok), [1]);
-        assert_eq!(others, 1);
-    }
-
-    #[tokio::test]
-    async fn others_get_nothing() {
-        let (ok, others) = permitted(&ctx("mallory", false), vec![sub(1, "alice")]).await;
-        assert!(ok.is_empty());
-        assert_eq!(others, 1);
-    }
-
-    #[tokio::test]
-    async fn server_owner_and_bot_owner_change_everything() {
-        let all = || vec![sub(1, "alice"), sub(2, "bob")];
-        let (ok, others) = permitted(&ctx("owner", false), all()).await;
-        assert_eq!((ids(&ok), others), (vec![1, 2], 0));
-        let (ok, others) = permitted(&ctx("botadmin", true), all()).await;
-        assert_eq!((ids(&ok), others), (vec![1, 2], 0));
     }
 }
