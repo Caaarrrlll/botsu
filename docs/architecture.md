@@ -63,6 +63,23 @@ Optional methods have default bodies that return `Error::Unsupported`, so a plat
 do something answers "not supported on X" instead of failing oddly. Add methods as features need
 them.
 
+### Voice
+
+`VoiceAdapter` (`botsu-core/src/voice.rs`): `user_channel`, `voice_members`, `join`, `play`,
+`stop`, `leave`. `play` takes a file path or URL; **ffmpeg** decodes it in both implementations.
+
+| | Discord (`DiscordVoice`) | Fluxer (`FluxerVoice`) |
+|---|---|---|
+| Transport | songbird 0.6 (Discord voice, DAVE via `davey`) | LiveKit room via fluxer-rust |
+| Audio path | ffmpeg → 48 kHz stereo f32 PCM → songbird `RawAdapter` (no decoders compiled in) | fluxer-rust `play_music` (ffmpeg → s16 PCM → LiveKit) |
+| Who is in voice | GUILD_CREATE snapshot + VOICE_STATE_UPDATE (no serenity cache) | GUILD_SYNC / PASSIVE_UPDATES snapshots + VOICE_STATE_UPDATE |
+
+`main` creates the voice adapters before the platforms connect, hands them to the `voice` command
+(a manual test, bot owners only) and passes each to its platform's `run`, which fills in the
+connection and voice states. Phase 6 (music) builds its queue on this interface. The Docker image
+carries a static ffmpeg binary (`mwader/static-ffmpeg`) because Debian's package adds ~650 MB of
+desktop libraries.
+
 ## Data model
 
 One SQLite file: `<BOTSU_DATA_DIR>/botsu.db` (`data/botsu.db` locally, `/data/botsu.db` in Docker).

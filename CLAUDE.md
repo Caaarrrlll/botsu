@@ -38,6 +38,12 @@ schema, adapter trait or alert rules change.
   hand any more unless CI is broken. User is fine publishing often.
 - Network test: `cargo test -p botsu-core -- --ignored` (hits real YouTube).
 
+## Voice (phase 0 test, phase 6 groundwork)
+- `VoiceAdapter` in botsu-core/src/voice.rs; `DiscordVoice` (songbird 0.6, DAVE) and `FluxerVoice` (LiveKit).
+  `!voice join|play|stop|leave|where` (bot owners) tests it on the deployed container. ffmpeg in the image
+  is a static binary from mwader/static-ffmpeg (Debian's package made the image 830 MB). Build needs
+  libopus-dev (Docker build stage, CI); runtime needs libopus0.
+
 ## Current phase
 Phase 2 (alerts): code done, live test pending (docs/testing.md section 5). Phase 1: `!ping` works live on
 Discord and the user's self-hosted Fluxer (2026-11-19); remaining there: Docker
