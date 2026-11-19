@@ -191,14 +191,13 @@ Alert commands (`alerts/commands.rs`):
 
 | Subcommand | Allowed |
 |---|---|
-| `add`, `list` | anyone |
-| `remove`, `tube shorts` | the subscription's `created_by`, the server owner (`ChatAdapter::guild_owner`), bot owners |
-| `import` | bot owners: `ctx.require_owner()` checks `BOTSU_OWNERS` (IDs from any platform) |
+| `add`, `list`, `remove` | anyone |
+| `import`, `tube shorts` | bot owners: `ctx.require_owner()` checks `BOTSU_OWNERS` (IDs from any platform) |
 
-`permitted()` filters the matching subscriptions to those the caller may change; the server owner
-is only looked up when some match belongs to someone else. Refusals of owner-only commands include
-the author's ID, so setting up `BOTSU_OWNERS` doesn't need developer mode. Role-based permissions
-come with phase 4.
+Deliberately lax for now. Refusals of owner-only commands include the author's ID, so setting up
+`BOTSU_OWNERS` doesn't need developer mode. Building blocks for finer rules are already there:
+subscriptions record `created_by`, and `ChatAdapter::guild_owner` returns a server's owner on both
+platforms. Role-based permissions come with phase 4.
 
 ## Configuration
 
