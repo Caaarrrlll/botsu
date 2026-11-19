@@ -71,6 +71,15 @@ pub trait ChatAdapter: Send + Sync {
         })
     }
 
+    /// The user ID of a server's owner, for "server owner may do this" permission checks.
+    async fn guild_owner(&self, guild_id: &str) -> Result<Option<String>> {
+        let _ = guild_id;
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "guild_owner",
+        })
+    }
+
     /// Finds a channel in a server by name (case-insensitive, without `#`). Used when
     /// importing lists that name channels instead of linking them.
     async fn find_channel(&self, guild_id: &str, name: &str) -> Result<Option<String>> {

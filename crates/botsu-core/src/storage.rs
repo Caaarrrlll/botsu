@@ -97,6 +97,8 @@ pub struct Subscription {
     pub channel_id: String,
     /// YouTube: also post Shorts (off by default).
     pub include_shorts: bool,
+    /// User ID that added it (may remove it and toggle its Shorts).
+    pub created_by: String,
 }
 
 /// A scheduled YouTube stream or premiere, checked every poll until it goes live.
@@ -196,23 +198,31 @@ impl Store {
 
     /// Removes subscriptions in one server (or DM channel) matching a source ID, key or name
     /// (case-insensitive). Returns how many were removed.
-    pub fn remove_subscriptions(
+    pub fn find_subscriptions(
         &self,
         kind: AlertKind,
         platform: Platform,
         scope: Scope<'_>,
         source: &str,
-    ) -> DbResult<usize> {
+    ) -> DbResult<Vec<Subscription>> {
         let (col, val) = scope.column();
-        self.conn().execute(
+        self.query_subscriptions(
             &format!(
-                "DELETE FROM subscriptions
-                 WHERE kind = ?1 AND platform = ?2 AND {col} = ?3
+                "WHERE kind = ?1 AND platform = ?2 AND {col} = ?3
                    AND (source_id = ?4 OR lower(source_key) = lower(?4)
                         OR lower(source_name) = lower(?4))"
             ),
             params![kind.as_str(), platform_str(platform), val, source],
         )
+    }
+
+    pub fn delete_subscriptions(&self, ids: &[i64]) -> DbResult<usize> {
+        let conn = self.conn();
+        let mut n = 0;
+        for id in ids {
+            n += conn.execute("DELETE FROM subscriptions WHERE id = ?1", params![id])?;
+        }
+        Ok(n)
     }
 
     pub fn list_subscriptions(
@@ -241,7 +251,7 @@ impl Store {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT id, kind, source_id, source_name, source_key, platform, guild_id, channel_id,
-                    include_shorts
+                    include_shorts, created_by
              FROM subscriptions {filter}"
         ))?;
         let rows = stmt.query_map(args, |r| {
@@ -265,29 +275,23 @@ impl Store {
                 guild_id: r.get(6)?,
                 channel_id: r.get(7)?,
                 include_shorts: r.get::<_, i64>(8)? != 0,
+                created_by: r.get(9)?,
             }))
         })?;
         rows.filter_map(|r| r.transpose()).collect()
     }
 
-    /// Turns Shorts on or off for matching subscriptions in one server. Returns how many changed.
-    pub fn set_include_shorts(
-        &self,
-        platform: Platform,
-        scope: Scope<'_>,
-        source: &str,
-        on: bool,
-    ) -> DbResult<usize> {
-        let (col, val) = scope.column();
-        self.conn().execute(
-            &format!(
-                "UPDATE subscriptions SET include_shorts = ?1
-                 WHERE kind = 'youtube' AND platform = ?2 AND {col} = ?3
-                   AND (source_id = ?4 OR lower(source_key) = lower(?4)
-                        OR lower(source_name) = lower(?4))"
-            ),
-            params![on as i64, platform_str(platform), val, source],
-        )
+    /// Turns Shorts on or off for the given subscriptions. Returns how many changed.
+    pub fn set_include_shorts(&self, ids: &[i64], on: bool) -> DbResult<usize> {
+        let conn = self.conn();
+        let mut n = 0;
+        for id in ids {
+            n += conn.execute(
+                "UPDATE subscriptions SET include_shorts = ?1 WHERE id = ?2",
+                params![on as i64, id],
+            )?;
+        }
+        Ok(n)
     }
 
     pub fn add_pending(&self, kind: AlertKind, p: &PendingItem) -> DbResult<()> {
@@ -455,32 +459,33 @@ mod tests {
             .unwrap()
             .is_empty());
 
-        let removed = store
-            .remove_subscriptions(AlertKind::YouTube, Platform::Discord, scope, "some channel")
+        let found = store
+            .find_subscriptions(AlertKind::YouTube, Platform::Discord, scope, "some channel")
             .unwrap();
-        assert_eq!(removed, 2);
+        assert_eq!(found.len(), 2);
+        assert!(found.iter().all(|s| s.created_by == "u1"));
+        assert!(store
+            .find_subscriptions(AlertKind::YouTube, Platform::Fluxer, scope, "UC1")
+            .unwrap()
+            .is_empty());
+        let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
+        assert_eq!(store.delete_subscriptions(&ids).unwrap(), 2);
+        assert!(store
+            .all_subscriptions(AlertKind::YouTube)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
     fn shorts_toggle_and_pending_items() {
         let store = Store::open_in_memory().unwrap();
         store.add_subscription(&sub("UC1", "c1")).unwrap();
-        let scope = Scope::Guild("g1");
         let get = || store.all_subscriptions(AlertKind::YouTube).unwrap()[0].include_shorts;
         assert!(!get(), "Shorts are off by default");
-        assert_eq!(
-            store
-                .set_include_shorts(Platform::Discord, scope, "some channel", true)
-                .unwrap(),
-            1
-        );
+        let id = store.all_subscriptions(AlertKind::YouTube).unwrap()[0].id;
+        assert_eq!(store.set_include_shorts(&[id], true).unwrap(), 1);
         assert!(get());
-        assert_eq!(
-            store
-                .set_include_shorts(Platform::Fluxer, scope, "UC1", false)
-                .unwrap(),
-            0
-        );
+        assert_eq!(store.set_include_shorts(&[id + 100], false).unwrap(), 0);
         let p = PendingItem {
             source_id: "UC1".into(),
             source_name: "Some Channel".into(),
