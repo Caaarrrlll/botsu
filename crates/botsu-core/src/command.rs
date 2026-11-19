@@ -10,6 +10,7 @@ use async_trait::async_trait;
 
 use crate::adapter::{ChatAdapter, IncomingMessage};
 use crate::error::{Error, Result};
+use crate::permissions::Level;
 
 pub struct CommandContext {
     pub chat: Arc<dyn ChatAdapter>,
@@ -19,9 +20,33 @@ pub struct CommandContext {
     /// The author is listed in `BOTSU_OWNERS`.
     pub is_owner: bool,
     pub prefix: String,
+    /// The author's permission level. Exact for commands whose `level()` is above
+    /// `Everyone` (the bot works it out before running them); otherwise `Everyone`, or
+    /// `BotOwner` for bot owners.
+    pub level: Level,
 }
 
 impl CommandContext {
+    /// Refuses channels from other servers: a channel ID typed in one server must not let a
+    /// command post or act in another server the bot is in.
+    pub async fn ensure_channel_here(&self, channel_id: &str) -> Result<()> {
+        if channel_id == self.message.channel_id {
+            return Ok(());
+        }
+        let not_here = || Error::Usage(format!("<#{channel_id}> isn't a channel in this server."));
+        let Some(guild) = self.message.guild_id.as_deref() else {
+            return Err(not_here());
+        };
+        match self.chat.channel_guild(channel_id).await {
+            Ok(Some(g)) if g == guild => Ok(()),
+            Ok(_) => Err(not_here()),
+            Err(e) => {
+                tracing::info!(error = %e, channel = channel_id, "channel lookup failed");
+                Err(not_here())
+            }
+        }
+    }
+
     /// Replies in the channel the command came from.
     pub async fn reply(&self, content: &str) -> Result<String> {
         self.chat
@@ -50,6 +75,12 @@ pub trait Command: Send + Sync {
 
     /// One line for `help`.
     fn help(&self) -> &'static str;
+
+    /// Minimum level to run the command at all (and to see it in `help`). Commands with
+    /// mixed subcommands keep `Everyone` and check inside.
+    fn level(&self) -> Level {
+        Level::Everyone
+    }
 
     async fn run(&self, ctx: CommandContext) -> Result<()>;
 }

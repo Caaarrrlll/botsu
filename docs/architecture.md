@@ -58,6 +58,9 @@ once connected, and pollers look up `bot.chat(platform)` to post.
 | `send_message(channel, text)` | yes | replies, alerts |
 | `delete_message`, `bulk_delete` | no | cleanup (phase 4) |
 | `find_channel(guild, name)` | no | `import` with channel names |
+| `channel_guild`, `guild_owner` | no | channel-in-this-server check, permissions |
+| `member_roles`, `roles`, `add_role`, `remove_role` | no | permissions, `addrole`/`removerole`, `set` |
+| `recent_messages(channel, before, limit)` | no | `cleanup` |
 
 Optional methods have default bodies that return `Error::Unsupported`, so a platform that can't
 do something answers "not supported on X" instead of failing oddly. Add methods as features need
@@ -204,17 +207,44 @@ used for detection because polling every channel through the Data API would exce
 
 ## Permissions
 
-Alert commands (`alerts/commands.rs`):
+Levels (`permissions.rs`), each including the ones below:
 
-| Subcommand | Allowed |
+| Level | Who |
 |---|---|
-| `add`, `list`, `remove` | anyone |
-| `import`, `tube shorts` | bot owners: `ctx.require_owner()` checks `BOTSU_OWNERS` (IDs from any platform) |
+| bot owner | user IDs in `BOTSU_OWNERS` (any platform) |
+| server owner | `ChatAdapter::guild_owner` |
+| admin | a role in `guild_roles` with level `admin`, or any role with Administrator (bit 3; `@everyone` counts, its ID is the server ID on Discord) |
+| mod | a role in `guild_roles` with level `mod` |
+| everyone | |
 
-Deliberately lax for now. Refusals of owner-only commands include the author's ID, so setting up
-`BOTSU_OWNERS` doesn't need developer mode. Building blocks for finer rules are already there:
-subscriptions record `created_by`, and `ChatAdapter::guild_owner` returns a server's owner on both
-platforms. Role-based permissions come with phase 4.
+Each `Command` declares `level()` (default everyone). `Bot::handle_message` works the caller's
+level out (server owner, member roles, server roles: a few API calls) only when a command needs
+more than everyone, refuses with "You need to be …", and passes the level in
+`CommandContext::level`. `help` lists only what the caller may run. Lookup failures count as
+everyone.
+
+| Command | Level |
+|---|---|
+| `ping`, `help`, `tube`/`twitch` `add`/`list`/`remove` | everyone |
+| `cleanup` | mod |
+| `addrole`, `removerole`, `announce` | admin (roles with Administrator: server owner) |
+| `set` | server owner |
+| `tube`/`twitch import`, `tube shorts`, `audio` | bot owner (`ctx.require_owner()` / `level()`) |
+
+Refusals of owner-only commands include the author's ID, so setting up `BOTSU_OWNERS` doesn't need
+developer mode. **Channel arguments** go through `CommandContext::ensure_channel_here`
+(`ChatAdapter::channel_guild`), so a channel ID from another server the bot is in is refused.
+
+### `guild_roles` (migration 3)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `platform` | TEXT | `discord` or `fluxer` |
+| `guild_id` | TEXT | Server |
+| `level` | TEXT | `admin` or `mod` |
+| `role_id` | TEXT | Role granting that level |
+
+Primary key on all four columns.
 
 ## Configuration
 

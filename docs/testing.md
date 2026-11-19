@@ -196,6 +196,50 @@ is skipped and listed. Nothing already published or already live is posted.
 Quick way to see an alert without waiting for a real upload: subscribe to a channel that posts
 often (news channels upload many times a day), or to a big streamer who's about to go live.
 
+## 6. Server tools (phase 4)
+
+### Permissions
+
+| Level | Who |
+|---|---|
+| bot owner | `BOTSU_OWNERS` |
+| server owner | the server's owner |
+| admin | anyone with Administrator, or a role added with `!set adminrole add <role>` |
+| mod | a role added with `!set modrole add <role>` |
+
+Each level can do everything the ones below it can. `!help` lists only what you may run.
+
+### Commands
+
+```
+!set adminrole add <role>      !set adminrole remove <role>     ← server owner
+!set modrole add <role>        !set modrole remove <role>
+!set roles                     ← who counts as admin and mod here
+!cleanup messages <n>          ← mods: the last n messages (up to 1000)
+!cleanup user <@user> <n>      ← that user's last n messages
+!cleanup bots <n>              ← bot messages and !commands
+!addrole <@user> <role>        ← admins (role by mention, ID or name)
+!removerole <@user> <role>
+!announce <#channel> <text>    ← admins
+```
+
+The bot needs **Manage Messages** (cleanup) and **Manage Roles** (addrole/removerole), and its
+own role must be **above** the roles it hands out. The invite link in the log now includes both;
+for the bots already in your servers, add them to the bot's role.
+
+### Checklist
+
+| Test | Discord | Fluxer |
+|---|---|---|
+| A regular member doesn't see `cleanup`/`addrole`/`set` in `!help` and gets "You need to be …" | | |
+| `!set modrole add <role>`, `!set roles` shows it; a member with that role can `!cleanup` | | |
+| `!cleanup messages 5` deletes 5 messages plus the command; the confirmation vanishes after 5 s | | |
+| `!cleanup user @someone 3`, `!cleanup bots 10` only delete theirs | | |
+| `!addrole @someone <role>` / `!removerole` work; a role above the bot's gives a clear error | | |
+| `!announce #channel hello` posts there; a channel ID from another server is refused | | |
+
+Fluxer's bulk-delete limits and role API are untested; note anything odd.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |

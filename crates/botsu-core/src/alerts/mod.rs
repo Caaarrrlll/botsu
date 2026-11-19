@@ -353,7 +353,7 @@ async fn deliver(bot: &Bot, subs: &[Subscription], text: &str) {
 }
 
 /// A target channel argument: a `<#id>` mention or a bare numeric ID.
-pub(crate) fn parse_channel(arg: &str) -> Option<String> {
+pub fn parse_channel(arg: &str) -> Option<String> {
     let id = arg
         .strip_prefix("<#")
         .and_then(|s| s.strip_suffix('>'))

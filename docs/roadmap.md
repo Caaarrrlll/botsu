@@ -44,8 +44,8 @@ Phase 0 has no strict order relative to 1: run the spikes early because their an
 
 Checklist and results in [spikes/README.md](../spikes/README.md); also record results in `CLAUDE.md`.
 
-- [x] **Self-hosted Fluxer on Unraid.** Running; `/.well-known/fluxer` reports `voice_enabled=true`, `self_hosted=true`. Still to note: RAM (`docker stats`) and which LiveKit UDP ports are forwarded.
-- [ ] **Fluxer bot voice.** Built into botsu as `!audio` (bot owners): joins the caller's voice channel via LiveKit and plays a test tone. Run it on the deployed container. *If this fails, music on Fluxer is off the table until Fluxer supports it.*
+- [x] **Self-hosted Fluxer on Unraid.** Running; `/.well-known/fluxer` reports `voice_enabled=true`, `self_hosted=true`. Uses ~1 GB RAM; LiveKit on ports 7881 and 7882.
+- [x] **Fluxer bot voice.** Works (2026-11-19). Built into botsu as `!audio` (bot owners): joins the caller's voice channel via LiveKit and plays a test tone. Run it on the deployed container. *If this fails, music on Fluxer is off the table until Fluxer supports it.*
 - [ ] **Discord voice + DAVE.** Same `!audio` command, via songbird 0.6.1 (ships DAVE through its `davey` dependency).
 - [ ] **Voice states:** `!audio join` without a channel needs the platform to tell bots who is in voice. Discord: GUILD_CREATE + VOICE_STATE_UPDATE. Fluxer: GUILD_SYNC / PASSIVE_UPDATES snapshots + VOICE_STATE_UPDATE (fluxer-rust's GUILD_CREATE model drops them).
 - [ ] **Fluxer API coverage.** Bulk delete, bans, member timeouts (`communication_disabled_until`) and role edits against the real instance: folded into phase 4, which uses them.
@@ -121,10 +121,13 @@ Get the project building and publishing itself before the bigger features land.
 
 Small features that share one prerequisite: knowing who may run what.
 
-- [ ] **Permissions:** levels `owner` > `admin` > `mod` > `everyone`. Owner from env (`BOTSU_OWNERS`, per platform user IDs); admin/mod roles configured per server with `$set adminrole` / `$set modrole`. Both platforms use the same role-based check. Discord's native slash-command permissions don't apply to prefix commands.
-- [ ] **Cleanup:** `$cleanup messages <n>`, `$cleanup user <@user> <n>`, `$cleanup bots <n>`. Respect Discord's limits (bulk delete only < 14 days, 100 per call); fall back to single deletes or report what was skipped. Check Fluxer's equivalent limits.
-- [ ] **Admin:** `$addrole`, `$removerole`, `$announce <channel> <text>`.
-- [ ] `$help` only lists commands the caller may run.
+- [x] **Permissions** (`permissions.rs`): bot owner (`BOTSU_OWNERS`) > server owner > admin > mod > everyone. Admin = a role set with `set adminrole add`, or any role with Administrator (including `@everyone`), so it works without setup. Mod = a role set with `set modrole add`. Stored per platform and server (migration 3, `guild_roles`). Each command declares a minimum level; the bot only looks levels up (a few API calls) for commands that need one. Lookup failures count as "everyone".
+- [x] **Cleanup** (mods): `cleanup messages <n>`, `cleanup user <@user> <n>`, `cleanup bots <n>` (bot messages and prefix commands). Up to 1000, scanning up to 1000 messages; stops at 14 days old (bulk-delete limit, applied on both platforms); batches of 100 with one-by-one fallback; the confirmation deletes itself after 5 s.
+- [x] **Admin** (admins): `addrole <@user> <role>`, `removerole <@user> <role>` (role by mention, ID or name; roles with Administrator only by the server owner), `announce <#channel> <text>`.
+- [x] `help` only lists commands the caller may run.
+- [x] Channel IDs from other servers are refused everywhere a channel is given (`announce`, `tube/twitch add` targets, import channel IDs).
+- [x] Invite permissions add Manage Messages and Manage Roles.
+- [ ] Live test on Discord and Fluxer (Fluxer's bulk-delete limits and role API are untested): checklist in [testing.md](testing.md) section 6.
 
 **Done when:** the Red permissions, cleanup and admin commands in use have equivalents on both platforms.
 

@@ -14,7 +14,7 @@ tables, alert rules, extending): [docs/architecture.md](docs/architecture.md). B
 | 1. Skeleton on Discord + Fluxer | `!ping` works on both; Docker image still to verify |
 | 2. Alerts (YouTube uploads, Twitch live) | code done; live test pending |
 | 3. CI/CD (GitHub Actions → Docker Hub) and install guides | **done**: every push to `master` publishes the image |
-| 4. Server tools (permissions, cleanup, admin) | |
+| 4. Server tools (permissions, cleanup, admin) | code done; live test pending |
 | 5. Moderation (cases, temp-bans, warnings) | |
 | 6. Music (yt-dlp + ffmpeg → Discord voice / LiveKit) | |
 | 7. Cutover from Red | |

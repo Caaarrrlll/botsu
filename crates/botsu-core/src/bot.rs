@@ -4,13 +4,16 @@ use std::sync::{Arc, RwLock};
 use crate::adapter::{ChatAdapter, IncomingMessage, Platform};
 use crate::command::{self, Command, CommandContext, Ping};
 use crate::error::Error;
+use crate::permissions::{Level, Permissions};
 
 /// The shared, platform-neutral bot. One instance serves every adapter.
 pub struct Bot {
     prefix: String,
-    /// User IDs (any platform) allowed to run admin commands. Phase 4 replaces this with roles.
+    /// User IDs (any platform) with every permission (`BOTSU_OWNERS`).
     owners: HashSet<String>,
     commands: BTreeMap<&'static str, Arc<dyn Command>>,
+    /// Works out admin/mod levels; without it only bot owners are above "everyone".
+    permissions: Option<Arc<Permissions>>,
     /// Connected platforms, for sending outside a command (alerts).
     chats: RwLock<HashMap<Platform, Arc<dyn ChatAdapter>>>,
 }
@@ -21,10 +24,15 @@ impl Bot {
             prefix: prefix.into(),
             owners: owners.into_iter().collect(),
             commands: BTreeMap::new(),
+            permissions: None,
             chats: RwLock::default(),
         };
         bot.register(Ping);
         bot
+    }
+
+    pub fn set_permissions(&mut self, permissions: Arc<Permissions>) {
+        self.permissions = Some(permissions);
     }
 
     pub fn prefix(&self) -> &str {
@@ -59,6 +67,23 @@ impl Bot {
             .cloned()
     }
 
+    async fn level_of(&self, chat: &dyn ChatAdapter, message: &IncomingMessage) -> Level {
+        let is_owner = self.owners.contains(&message.author.id);
+        match &self.permissions {
+            Some(p) => {
+                p.level(
+                    chat,
+                    message.guild_id.as_deref(),
+                    &message.author.id,
+                    is_owner,
+                )
+                .await
+            }
+            None if is_owner => Level::BotOwner,
+            None => Level::Everyone,
+        }
+    }
+
     /// Entry point for adapters: call this for every message received.
     pub async fn handle_message(&self, chat: Arc<dyn ChatAdapter>, message: IncomingMessage) {
         if message.author.is_bot {
@@ -70,7 +95,8 @@ impl Bot {
         let args = args.to_owned();
 
         if name == "help" {
-            let text = self.help_text();
+            let level = self.level_of(&*chat, &message).await;
+            let text = self.help_text(level);
             if let Err(e) = chat.send_message(&message.channel_id, &text).await {
                 tracing::warn!(error = %e, "failed to send help");
             }
@@ -83,12 +109,34 @@ impl Bot {
 
         let channel_id = message.channel_id.clone();
         let platform = message.platform;
+        let is_owner = self.owners.contains(&message.author.id);
         tracing::debug!(%platform, command = %name, user = %message.author.id, "running command");
+
+        // Only look the level up (a few API calls) when the command needs it.
+        let level = if cmd.level() > Level::Everyone {
+            let level = self.level_of(&*chat, &message).await;
+            if level < cmd.level() {
+                let text = format!(
+                    "You need to be {} to use `{}{}`.",
+                    cmd.level(),
+                    self.prefix,
+                    name
+                );
+                let _ = chat.send_message(&channel_id, &text).await;
+                return;
+            }
+            level
+        } else if is_owner {
+            Level::BotOwner
+        } else {
+            Level::Everyone
+        };
 
         let ctx = CommandContext {
             chat: chat.clone(),
-            is_owner: self.owners.contains(&message.author.id),
+            is_owner,
             prefix: self.prefix.clone(),
+            level,
             message,
             args,
         };
@@ -104,10 +152,11 @@ impl Bot {
         }
     }
 
-    fn help_text(&self) -> String {
+    /// Only the commands `level` may run.
+    fn help_text(&self, level: Level) -> String {
         let mut out = String::from("Commands:\n");
         out.push_str(&format!("`{}help`: show this list\n", self.prefix));
-        for cmd in self.commands.values() {
+        for cmd in self.commands.values().filter(|c| c.level() <= level) {
             out.push_str(&format!(
                 "`{}{}`: {}\n",
                 self.prefix,
