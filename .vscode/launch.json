@@ -1,0 +1,35 @@
+{
+    // F5 = start with the debugger; Ctrl+F5 = run without it. Needs the CodeLLDB extension.
+    // Both read tokens from .env. Stop with the red square or Ctrl+C in the terminal.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "botsu (debug)",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": ["build", "-p", "botsu", "--bin", "botsu"],
+                "filter": { "name": "botsu", "kind": "bin" }
+            },
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "terminal": "integrated",
+            "sourceLanguages": ["rust"]
+        },
+        {
+            "name": "botsu (release)",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": ["build", "-p", "botsu", "--bin", "botsu", "--release"],
+                "filter": { "name": "botsu", "kind": "bin" }
+            },
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            // Production log level, overriding RUST_LOG from .env.
+            "env": { "RUST_LOG": "info" },
+            "terminal": "integrated",
+            "sourceLanguages": ["rust"]
+        }
+    ]
+}

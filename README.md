@@ -9,7 +9,7 @@ possible bonus). Plan: [docs/roadmap.md](docs/roadmap.md). Background: [docs/han
 | Phase | State |
 |---|---|
 | 0. Spikes (voice on Fluxer, Discord DAVE) | open, see [spikes/](spikes/README.md) |
-| 1. Skeleton on Discord + Fluxer | code done; live testing in progress ([docs/testing.md](docs/testing.md)) |
+| 1. Skeleton on Discord + Fluxer | `!ping` works on both; Docker image still to verify |
 | 2. Alerts (YouTube uploads, Twitch live) | |
 | 3. CI/CD (GitHub Actions → Docker Hub) and install guides | |
 | 4. Server tools (permissions, cleanup, admin) | |
@@ -37,7 +37,8 @@ All configuration is environment variables; see [.env.example](.env.example).
 |---|---|---|
 | `DISCORD_TOKEN` | one of the two | enables Discord |
 | `FLUXER_TOKEN` | one of the two | enables Fluxer |
-| `FLUXER_API_URL` | no | `https://api.fluxer.app/v1` (set for a self-hosted instance) |
+| `FLUXER_URL` | no | your self-hosted instance's web address; API URL is discovered. Unset = fluxer.app |
+| `FLUXER_API_URL` | no | explicit API base with `/v1`; overrides `FLUXER_URL` |
 | `BOTSU_PREFIX` | no | `$` |
 
 Getting tokens and testing against live servers: [docs/testing.md](docs/testing.md).

@@ -4,7 +4,7 @@
 
 use anyhow::{bail, Result};
 use botsu_discord::DiscordConfig;
-use botsu_fluxer::FluxerConfig;
+use botsu_fluxer::{FluxerConfig, FluxerEndpoint};
 
 /// Red's prefix, so botsu is a drop-in replacement after cutover.
 /// Override with `BOTSU_PREFIX` (for example `!` while Red is still running).
@@ -21,6 +21,18 @@ fn var(name: &str) -> Option<String> {
         .ok()
         .map(|v| v.trim().to_owned())
         .filter(|v| !v.is_empty())
+}
+
+/// `https://host[:port]/any/path?q` → `https://host[:port]`. None if it isn't an http(s) URL.
+fn origin(url: &str) -> Option<&str> {
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))?;
+    let host_len = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    if host_len == 0 {
+        return None;
+    }
+    Some(&url[..url.len() - rest.len() + host_len])
 }
 
 /// Reads a secret, rejecting values that still carry quotes:
@@ -43,11 +55,26 @@ impl Config {
 
         let discord = secret("DISCORD_TOKEN")?.map(|token| DiscordConfig { token });
 
-        let fluxer = secret("FLUXER_TOKEN")?.map(|token| FluxerConfig {
-            token,
-            api_url: var("FLUXER_API_URL")
-                .unwrap_or_else(|| botsu_fluxer::DEFAULT_API_URL.to_owned()),
-        });
+        // FLUXER_API_URL (explicit) wins over FLUXER_URL (discovered); neither means fluxer.app.
+        let endpoint = match (var("FLUXER_API_URL"), var("FLUXER_URL")) {
+            (Some(api), _) => FluxerEndpoint::ApiUrl(api),
+            (None, Some(instance)) => {
+                let Some(origin) = origin(&instance) else {
+                    bail!("FLUXER_URL must start with https:// (got {instance:?})");
+                };
+                if origin != instance.trim_end_matches('/') {
+                    // Common when copying the address bar from inside a channel.
+                    tracing::warn!(
+                        given = %instance,
+                        using = origin,
+                        "FLUXER_URL should be just the site address; ignoring the path"
+                    );
+                }
+                FluxerEndpoint::Instance(origin.to_owned())
+            }
+            (None, None) => FluxerEndpoint::Default,
+        };
+        let fluxer = secret("FLUXER_TOKEN")?.map(|token| FluxerConfig { token, endpoint });
 
         if discord.is_none() && fluxer.is_none() {
             bail!("no platform configured: set DISCORD_TOKEN and/or FLUXER_TOKEN");
@@ -58,5 +85,28 @@ impl Config {
             discord,
             fluxer,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::origin;
+
+    #[test]
+    fn origin_strips_paths() {
+        assert_eq!(
+            origin("https://fluxer.example.org/channels/123/456"),
+            Some("https://fluxer.example.org")
+        );
+        assert_eq!(
+            origin("https://fluxer.example.org/"),
+            Some("https://fluxer.example.org")
+        );
+        assert_eq!(
+            origin("http://10.0.0.5:8080?x=1"),
+            Some("http://10.0.0.5:8080")
+        );
+        assert_eq!(origin("fluxer.example.org"), None);
+        assert_eq!(origin("https:///nohost"), None);
     }
 }

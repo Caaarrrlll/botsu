@@ -31,7 +31,6 @@ async fn main() -> Result<()> {
         adapters.spawn(async move { ("discord", botsu_discord::run(discord, bot).await) });
     }
     if let Some(fluxer) = config.fluxer {
-        tracing::info!(api_url = %fluxer.api_url, "Fluxer enabled");
         let bot = bot.clone();
         adapters.spawn(async move { ("fluxer", botsu_fluxer::run(fluxer, bot).await) });
     }

@@ -59,7 +59,7 @@ Already done: workspace, `botsu-core`, `botsu-fluxer`, binary, env config, Docke
 - [x] **`botsu-discord` crate** on serenity 0.12 (gateway + REST, no cache). Enable the Message Content intent in the Discord developer portal (needed for prefix commands).
 - [x] Binary starts every adapter whose token is set (`DISCORD_TOKEN`, `FLUXER_TOKEN`); at least one is required.
 - [x] Fluxer startup check: token and API URL verified before connecting; logs `voice_enabled` from `/.well-known/fluxer`.
-- [ ] Test `ping` / `help` on the self-hosted Fluxer instance and on the Discord servers: checklist in [testing.md](testing.md). Use a non-`$` prefix while Red is still running.
+- [x] Test `ping` on the self-hosted Fluxer instance and on Discord (2026-11-19, prefix `!`, both answered from one process). Rest of the checklist in [testing.md](testing.md) (help, case, reconnect) still to run.
 - [ ] `docker build` works and the image runs on Unraid with the env file from `/mnt/user/appdata/secrets/`.
 - [ ] Image runs as a non-root user and works with `--user 99:100` (Unraid's nobody:users) and with a mounted `/data`.
 
@@ -101,6 +101,7 @@ Get the project building and publishing itself before the bigger features land.
 - [ ] `deploy/docker-compose.yml`: image from Docker Hub, `env_file`, `/data` volume, `restart: unless-stopped`.
 - [ ] `deploy/unraid/botsu.xml`: Unraid template pointing at the Docker Hub image (appdata path, Extra Parameters `--env-file`, `--user 99:100`). Keep a snapshot in the server notes.
 - [ ] `docs/install-docker.md`: plain `docker run` and Compose instructions for anyone.
+- [ ] **Log invite links at startup** (terminal and `docker logs`), one per connected platform, so whoever spins the bot up can add it to servers right away. No extra config needed: Discord's application ID comes from the Ready event (`ready.application.id`); on Fluxer the bot user ID *is* the application ID (seen in the token check), and the host comes from discovery. Permissions value grows with later phases (one constant per phase's needs). Then `*_APPLICATION_ID` in `.env.example` can be dropped.
 - [ ] `docs/install-linux.md`: native install without containers: download or `cargo build --release`, a `botsu` system user, `/etc/botsu/botsu.env` (mode 600), `/var/lib/botsu` as the data directory, and a hardened systemd unit (`deploy/systemd/botsu.service`). Phase 6 adds the ffmpeg and yt-dlp steps.
 - [ ] Decide whether GitHub Releases should also carry a prebuilt Linux binary for the native guide (static linking is tricky with libwebrtc; a glibc build for Debian/Ubuntu is fine).
 
@@ -176,7 +177,7 @@ Updated as phases land. ✅ works · 🟡 partial · ❌ not possible · — not
 
 | Feature | Discord | Fluxer | Stoat (bonus) |
 |---|---|---|---|
-| Prefix commands | ✅ (untested live) | ✅ (untested live) | — |
+| Prefix commands | ✅ | ✅ (self-hosted) | — |
 | Slash commands | optional | ❌ (not in fluxer-rust 0.2) | — |
 | Alerts | — | — | — |
 | Permissions / cleanup / admin | — | — | — |

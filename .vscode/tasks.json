@@ -1,0 +1,70 @@
+{
+    // Ctrl+Shift+B = default build task; "Tasks: Run Task" for the rest.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "botsu: run (debug)",
+            "detail": "Debug build, settings from .env",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/run.ps1"],
+            "problemMatcher": ["$rustc"],
+            "isBackground": false,
+            "presentation": { "panel": "dedicated", "clear": true }
+        },
+        {
+            "label": "botsu: run (release)",
+            "detail": "Release build (what the Docker image runs), RUST_LOG=info",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/run.ps1", "-Release"],
+            "problemMatcher": ["$rustc"],
+            "presentation": { "panel": "dedicated", "clear": true }
+        },
+        {
+            "label": "cargo: build (debug)",
+            "type": "process",
+            "command": "cargo",
+            "args": ["build", "-p", "botsu"],
+            "problemMatcher": ["$rustc"],
+            "group": { "kind": "build", "isDefault": true }
+        },
+        {
+            "label": "cargo: build (release)",
+            "type": "process",
+            "command": "cargo",
+            "args": ["build", "-p", "botsu", "--release"],
+            "problemMatcher": ["$rustc"],
+            "group": "build"
+        },
+        {
+            "label": "cargo: test",
+            "type": "process",
+            "command": "cargo",
+            "args": ["test", "--workspace"],
+            "problemMatcher": ["$rustc"],
+            "group": { "kind": "test", "isDefault": true }
+        },
+        {
+            "label": "cargo: clippy",
+            "type": "process",
+            "command": "cargo",
+            "args": ["clippy", "--workspace", "--all-targets"],
+            "problemMatcher": ["$rustc"]
+        },
+        {
+            "label": "cargo: fmt",
+            "type": "process",
+            "command": "cargo",
+            "args": ["fmt", "--all"],
+            "problemMatcher": []
+        },
+        {
+            "label": "check: all (fmt, clippy, test)",
+            "detail": "Run before committing",
+            "dependsOrder": "sequence",
+            "dependsOn": ["cargo: fmt", "cargo: clippy", "cargo: test"],
+            "problemMatcher": []
+        }
+    ]
+}

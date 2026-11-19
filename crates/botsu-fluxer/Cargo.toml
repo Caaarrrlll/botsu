@@ -10,5 +10,6 @@ publish.workspace = true
 botsu-core.workspace = true
 fluxer-rust.workspace = true
 async-trait.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true

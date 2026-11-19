@@ -139,5 +139,14 @@ pub async fn run(config: DiscordConfig, bot: Arc<Bot>) -> Result<(), Error> {
         .event_handler(Handler { bot })
         .await
         .map_err(err)?;
-    client.start().await.map_err(err)
+    client.start().await.map_err(|e| match e {
+        serenity::Error::Gateway(serenity::gateway::GatewayError::DisallowedGatewayIntents) => err(
+            "Message Content intent is not enabled for this bot: Discord developer portal → \
+                 your application → Bot → Privileged Gateway Intents → Message Content Intent",
+        ),
+        serenity::Error::Gateway(serenity::gateway::GatewayError::InvalidAuthentication) => {
+            err("Discord rejected DISCORD_TOKEN (reset it on the Bot page and update the env file)")
+        }
+        other => err(other),
+    })
 }
