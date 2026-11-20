@@ -4,7 +4,7 @@
 //! |---|---|
 //! | `set adminrole/modrole add/remove <role>`, `set roles`, `set modlog`, `set muterole`, `set moddm` | server owner |
 //! | `cleanup messages/user/bots` | mod |
-//! | `addrole <role> <@user…>`, `removerole <role> <@user…>`, `announce` | admin |
+//! | `addrole <role> <@user…>`, `removerole <role> <@user>`, `announce` | admin |
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -462,7 +462,7 @@ impl Command for RoleCommand {
         if self.add {
             "Give a role to one or more members (admins)."
         } else {
-            "Take a role from one or more members (admins)."
+            "Take a role from a member (admins)."
         }
     }
 
@@ -473,12 +473,21 @@ impl Command for RoleCommand {
     async fn run(&self, ctx: CommandContext) -> Result<()> {
         let guild = guild(&ctx)?;
         let (role_arg, users) = split_role_users(&ctx.args);
-        if users.is_empty() || role_arg.is_empty() {
-            return Err(Error::Usage(format!(
-                "Usage: `{}{} <role> <@user> [@user …]` (role by mention, ID or name)",
+        // addrole takes several members; removerole exactly one.
+        let usage = || {
+            let who = if self.add {
+                "<@user> [@user …]"
+            } else {
+                "<@user>"
+            };
+            Error::Usage(format!(
+                "Usage: `{}{} <role> {who}` (role by mention, ID or name)",
                 ctx.prefix,
                 self.name()
-            )));
+            ))
+        };
+        if users.is_empty() || role_arg.is_empty() || (!self.add && users.len() > 1) {
+            return Err(usage());
         }
         if users.len() > ROLE_USERS_MAX {
             return Err(Error::Usage(format!(
