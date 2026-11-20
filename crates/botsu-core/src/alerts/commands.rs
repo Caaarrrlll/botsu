@@ -1,5 +1,6 @@
 //! `tube` and `twitch` commands: add, remove and list subscriptions for the current server.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -198,12 +199,12 @@ async fn set_mention(
     let reply = match &value {
         Some(v) if v.starts_with("user:") => format!(
             "Alerts will mention {} ({n} alert(s) updated).",
-            quiet_mention(v)
+            quiet_mention(v, &mention_names(ctx, std::slice::from_ref(v)).await)
         ),
         Some(v) => format!(
             "Alerts will mention {} ({n} alert(s) updated). For it to ping, the role must be \
              mentionable or I need permission to mention everyone.",
-            quiet_mention(v)
+            quiet_mention(v, &mention_names(ctx, std::slice::from_ref(v)).await)
         ),
         None => format!("Alerts won't mention anyone ({n} alert(s) updated)."),
     };
@@ -220,14 +221,46 @@ fn require(ctx: &CommandContext, level: Level) -> Result<()> {
 }
 
 /// A stored mention for replies and lists: in a code span, so it doesn't ping anyone.
-fn quiet_mention(m: &str) -> String {
+/// Role and user names come from `names` (see [`mention_names`]); the ID if it isn't there.
+fn quiet_mention(m: &str, names: &HashMap<String, String>) -> String {
     match m {
         "everyone" | "here" => format!("`{}`", mention_text(m)),
-        m => match m.strip_prefix("user:") {
-            Some(user) => format!("user `{user}`"),
-            None => format!("role `{m}`"),
+        m => match (names.get(m), m.strip_prefix("user:")) {
+            (Some(name), Some(_)) => format!("**{name}**"),
+            (Some(name), None) => format!("role **{name}**"),
+            (None, Some(user)) => format!("user `{user}`"),
+            (None, None) => format!("role `{m}`"),
         },
     }
+}
+
+/// Display names for stored mentions (role IDs and `user:<ID>`), looked up once per reply.
+/// Lookups that fail are left out, so the ID is shown instead.
+async fn mention_names(ctx: &CommandContext, mentions: &[String]) -> HashMap<String, String> {
+    let mut names = HashMap::new();
+    let mut roles = None;
+    for m in mentions {
+        let m = m.as_str();
+        if names.contains_key(m) || matches!(m, "everyone" | "here") {
+            continue;
+        }
+        if let Some(user) = m.strip_prefix("user:") {
+            if let Ok(name) = ctx.chat.user_name(user).await {
+                names.insert(m.to_owned(), name);
+            }
+            continue;
+        }
+        if roles.is_none() {
+            roles = Some(match ctx.message.guild_id.as_deref() {
+                Some(g) => ctx.chat.roles(g).await.unwrap_or_default(),
+                None => Vec::new(),
+            });
+        }
+        if let Some(r) = roles.iter().flatten().find(|r| r.id == m) {
+            names.insert(m.to_owned(), r.name.clone());
+        }
+    }
+    names
 }
 
 /// The reply when `message`/`mention`/`remove` match nothing: a mention typed where the name
@@ -264,10 +297,10 @@ fn not_found(
 }
 
 /// What's customised on a subscription, for `list`.
-fn list_extras(s: &Subscription) -> String {
+fn list_extras(s: &Subscription, names: &HashMap<String, String>) -> String {
     let mut out = String::new();
     if let Some(m) = &s.mention {
-        out.push_str(&format!(" · mentions {}", quiet_mention(m)));
+        out.push_str(&format!(" · mentions {}", quiet_mention(m, names)));
     }
     if s.message.is_some() {
         out.push_str(" · custom text");
@@ -678,6 +711,8 @@ impl Command for TubeCommand {
                     ctx.message.platform,
                     scope(&ctx),
                 )?;
+                let mentions: Vec<String> = subs.iter().filter_map(|s| s.mention.clone()).collect();
+                let names = mention_names(&ctx, &mentions).await;
                 let text = if subs.is_empty() {
                     format!(
                         "No YouTube alerts here yet. Add one with `{}tube add <channel>`.",
@@ -693,7 +728,7 @@ impl Command for TubeCommand {
                                 s.source_id,
                                 s.channel_id,
                                 if s.include_shorts { " (Shorts on)" } else { "" },
-                                list_extras(s)
+                                list_extras(s, &names)
                             )
                         })
                         .collect();
@@ -967,6 +1002,8 @@ impl Command for TwitchCommand {
                     ctx.message.platform,
                     scope(&ctx),
                 )?;
+                let mentions: Vec<String> = subs.iter().filter_map(|s| s.mention.clone()).collect();
+                let names = mention_names(&ctx, &mentions).await;
                 let text = if subs.is_empty() {
                     format!(
                         "No Twitch alerts here yet. Add one with `{}twitch add <name>`.",
@@ -981,7 +1018,7 @@ impl Command for TwitchCommand {
                                 s.source_name,
                                 s.source_key,
                                 s.channel_id,
-                                list_extras(s)
+                                list_extras(s, &names)
                             )
                         })
                         .collect();
@@ -1055,6 +1092,19 @@ mod tests {
         );
         assert_eq!(parse_mention("abc Moderators"), None);
         assert_eq!(parse_mention("abc"), None);
+    }
+
+    #[test]
+    fn mentions_shown_without_pinging() {
+        let names = HashMap::from([
+            ("1".to_owned(), "Testing Role".to_owned()),
+            ("user:2".to_owned(), "Carl".to_owned()),
+        ]);
+        assert_eq!(quiet_mention("1", &names), "role **Testing Role**");
+        assert_eq!(quiet_mention("user:2", &names), "**Carl**");
+        assert_eq!(quiet_mention("3", &names), "role `3`");
+        assert_eq!(quiet_mention("user:4", &names), "user `4`");
+        assert_eq!(quiet_mention("everyone", &names), "`@everyone`");
     }
 
     #[test]
