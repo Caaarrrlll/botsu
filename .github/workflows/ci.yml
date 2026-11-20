@@ -4,6 +4,15 @@ on:
   push:
     branches: [master]
     tags: ["v*"]
+    # Pushes that only touch these don't change the image, so they don't build or publish it.
+    # (Tag pushes always run: GitHub ignores path filters for tags.)
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "spikes/**"
+      - "deploy/**"
+      - "assets/**"
+      - ".github/dependabot.yml"
   pull_request:
   workflow_dispatch:
 
