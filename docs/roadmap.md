@@ -79,7 +79,7 @@ The easiest cross-platform feature: "post a message in channel X". Replaces Red'
 - [x] **Shorts:** detected from the feed's `/shorts/` links; off by default per subscription, `tube shorts <name> on|off`.
 - [x] Commands: `tube add|remove|list`, `twitch add|remove|list` (`[#channel]` picks the target; the bot test-posts there first). Add/remove limited to `BOTSU_OWNERS` until phase 4.
 - [x] Alerts target channels on either platform; the same source can post to Discord and Fluxer channels.
-- [ ] Live test: a real upload and a real stream posted once on both platforms, nothing reposted after a restart.
+- [ ] Live test: a real upload and a real stream posted once on both platforms, nothing reposted after a restart. Upload confirmed on Discord (2026-11-20, 2 min after Red); streams (YouTube and Twitch) and Fluxer still to do.
 - [x] `tube import` / `twitch import`: create subscriptions from a pasted list (Red's `tube list` format, Twitch names with `and`/commas, `youtube:`/`twitch:` sections).
 - [ ] Optional, Red parity: custom alert message and role mention per subscription.
 - [ ] Optional: `tube remove <name> #channel` to remove a source from one channel only.
