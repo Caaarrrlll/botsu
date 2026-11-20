@@ -74,6 +74,13 @@ fn parse_message(rest: &str) -> (String, Option<String>, MessageArg) {
     }
 }
 
+/// Several commands pasted into one message: a later line starting with the prefix.
+fn has_command_line(text: &str, prefix: &str) -> bool {
+    text.lines()
+        .skip(1)
+        .any(|l| l.trim_start().starts_with(prefix))
+}
+
 fn is_off(word: &str) -> bool {
     matches!(
         word.to_lowercase().as_str(),
@@ -154,6 +161,12 @@ async fn set_message(
             require(ctx, Level::Mod)?;
             if text.chars().count() > 1500 {
                 return Err(Error::Usage("Keep the text under 1500 characters.".into()));
+            }
+            if has_command_line(&text, &ctx.prefix) {
+                return Err(Error::Usage(
+                    "That text has another command on a later line. I run one command per                      message: send each command on its own."
+                        .into(),
+                ));
             }
             let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
             let n = store.set_alert_message(&ids, Some(&text))?;
@@ -1105,6 +1118,21 @@ mod tests {
         assert_eq!(quiet_mention("3", &names), "role `3`");
         assert_eq!(quiet_mention("user:4", &names), "user `4`");
         assert_eq!(quiet_mention("everyone", &names), "`@everyone`");
+    }
+
+    #[test]
+    fn pasted_commands() {
+        assert!(has_command_line(
+            "🔔 {title}
+!tube mention x @r",
+            "!"
+        ));
+        assert!(!has_command_line(
+            "line one
+line two {url}",
+            "!"
+        ));
+        assert!(!has_command_line("!important {title}", "!"));
     }
 
     #[test]
