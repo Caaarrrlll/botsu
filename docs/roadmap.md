@@ -140,7 +140,7 @@ Small features that share one prerequisite: knowing who may run what.
 - [x] Hierarchy checks: can't act on yourself, the server owner or the bot; the target must be below the moderator in botsu's levels and in role rank.
 - [ ] Live test on Discord and Fluxer: checklist in [testing.md](testing.md) section 7.
 - [ ] Optional: import existing cases from Red's config (only if they're worth keeping).
-- [ ] Optional: DM the user before a kick/ban, and `$mute` via a role on platforms without timeouts.
+- [x] DM the member before an action (`set moddm on`, off by default) and `mute`/`unmute` with a mute role (`set muterole`), timed mutes lifted by the temp-ban task (migration 6); without a mute role, `mute` is a timeout. Live test in testing.md section 7.
 
 **Done when:** parity with Red's mod cog as used; a temp-ban survives a container restart and still expires on time.
 
