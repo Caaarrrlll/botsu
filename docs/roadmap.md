@@ -103,7 +103,7 @@ Get the project building and publishing itself before the bigger features land.
 - [x] **Release job** in the same workflow, after the checks pass, only on `master` and `v*` tags: buildx + metadata + build-push with the GitHub Actions layer cache. Tags: `latest` and `sha-<short>` on `master`; `X.Y.Z` and `X.Y` on tags `vX.Y.Z`.
 - [x] `linux/amd64`. `linux/arm64` only if phase 0 finds a prebuilt libwebrtc, built on a native arm64 runner (emulated webrtc builds would be very slow).
 - [x] OCI labels (source, revision, version) via `docker/metadata-action`, so Docker Hub and Unraid link back to the repo.
-- [x] Sync the README to the Docker Hub description: `peter-evans/dockerhub-description` on pushes to `master`, with relative links turned into GitHub links. Needs a second secret, `DOCKERHUB_README_TOKEN`: a Docker Hub token with Read, Write & Delete scope (Docker Hub refuses description edits from Read & Write tokens). Only the README step gets it; skipped while it isn't set.
+- [x] Docker Hub description: updated by hand from README.md when it matters (decided 2026-11-20). Automating it would need a second token with Read, Write & Delete scope (Docker Hub refuses description edits from Read & Write tokens); not worth it.
 - [x] Faster image builds: `cargo-chef` stages in the Dockerfile put the dependency build (and the libwebrtc download) in its own layer, which the GitHub Actions layer cache keeps; only Cargo.toml/Cargo.lock/`vendor/` changes rebuild it. Pull requests build the image without publishing it, so Dockerfile changes are tested before `master`.
 
 ### Running it anywhere
