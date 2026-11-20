@@ -37,6 +37,19 @@ pub const INVITE_PERMISSIONS: u64 = 1024
     | (1 << 2)
     | (1 << 40);
 
+/// Administrator: everything, and channel overrides no longer apply. Role hierarchy still does.
+pub const ADMIN_PERMISSIONS: u64 = 1 << 3;
+
+/// What the startup invite links request: the list above, or Administrator when the host set
+/// `BOTSU_INVITE_ADMIN` (a leaked token then controls every server that accepted it).
+pub fn invite_permissions(admin: bool) -> u64 {
+    if admin {
+        ADMIN_PERMISSIONS
+    } else {
+        INVITE_PERMISSIONS
+    }
+}
+
 pub use adapter::{
     Author, BanInfo, Capabilities, ChatAdapter, HistoryMessage, IncomingMessage, Platform, RoleInfo,
 };

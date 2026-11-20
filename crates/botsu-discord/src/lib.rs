@@ -24,6 +24,8 @@ use songbird::{SerenityInit, Songbird};
 #[derive(Debug, Clone)]
 pub struct DiscordConfig {
     pub token: String,
+    /// The invite link requests Administrator instead of the specific permissions.
+    pub invite_admin: bool,
 }
 
 /// Outbound side: implements the core's [`ChatAdapter`] with Discord REST calls.
@@ -567,6 +569,7 @@ impl VoiceAdapter for DiscordVoice {
 struct Handler {
     bot: Arc<Bot>,
     voice: Arc<DiscordVoice>,
+    invite_admin: bool,
 }
 
 #[async_trait]
@@ -598,7 +601,7 @@ impl EventHandler for Handler {
         tracing::info!(
             "Discord invite link: https://discord.com/oauth2/authorize?client_id={}&scope=bot&permissions={}",
             ready.application.id,
-            botsu_core::INVITE_PERMISSIONS
+            botsu_core::invite_permissions(self.invite_admin)
         );
     }
 
@@ -645,6 +648,7 @@ pub async fn run(
         .event_handler(Handler {
             bot: bot.clone(),
             voice: voice.clone(),
+            invite_admin: config.invite_admin,
         })
         .register_songbird_with(voice.songbird.clone())
         .await

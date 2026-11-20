@@ -77,6 +77,15 @@ impl Vars {
     }
 
     /// A poll interval in seconds, with a floor so nobody hammers YouTube or Twitch.
+    /// An on/off setting: `true`/`yes`/`on`/`1` or `false`/`no`/`off`/`0`; unset = `false`.
+    fn flag(&self, name: &str) -> Result<bool> {
+        match self.get(name).map(|v| v.to_lowercase()).as_deref() {
+            None | Some("false" | "no" | "off" | "0") => Ok(false),
+            Some("true" | "yes" | "on" | "1") => Ok(true),
+            Some(other) => bail!("{name} must be true or false (got {other:?})"),
+        }
+    }
+
     fn interval(&self, name: &str, default: u64, min: u64) -> Result<Duration> {
         let secs = match self.get(name) {
             None => default,
@@ -162,9 +171,11 @@ impl Config {
             bail!("BOTSU_PREFIX must not contain spaces (got {prefix:?})");
         }
 
-        let discord = vars
-            .secret("DISCORD_TOKEN")?
-            .map(|token| DiscordConfig { token });
+        let invite_admin = vars.flag("BOTSU_INVITE_ADMIN")?;
+        let discord = vars.secret("DISCORD_TOKEN")?.map(|token| DiscordConfig {
+            token,
+            invite_admin,
+        });
 
         // FLUXER_API_URL (explicit) wins over FLUXER_URL (discovered); neither means fluxer.app.
         let endpoint = match (vars.get("FLUXER_API_URL"), vars.get("FLUXER_URL")) {
@@ -185,9 +196,11 @@ impl Config {
             }
             (None, None) => FluxerEndpoint::Default,
         };
-        let fluxer = vars
-            .secret("FLUXER_TOKEN")?
-            .map(|token| FluxerConfig { token, endpoint });
+        let fluxer = vars.secret("FLUXER_TOKEN")?.map(|token| FluxerConfig {
+            token,
+            endpoint,
+            invite_admin,
+        });
 
         if discord.is_none() && fluxer.is_none() {
             return Ok(None);
@@ -234,6 +247,20 @@ fn parse_owners(v: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn on_off_flags() {
+        let vars = |v: &str| {
+            let mut m = std::collections::HashMap::new();
+            m.insert("BOTSU_TEST_FLAG".to_owned(), v.to_owned());
+            Vars::new(m)
+        };
+        assert!(vars("true").flag("BOTSU_TEST_FLAG").unwrap());
+        assert!(vars("On").flag("BOTSU_TEST_FLAG").unwrap());
+        assert!(!vars("0").flag("BOTSU_TEST_FLAG").unwrap());
+        assert!(!vars("").flag("BOTSU_TEST_FLAG").unwrap());
+        assert!(vars("maybe").flag("BOTSU_TEST_FLAG").is_err());
+    }
 
     #[test]
     fn owners_list() {

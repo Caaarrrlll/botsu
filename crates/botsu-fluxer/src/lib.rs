@@ -42,6 +42,8 @@ pub enum FluxerEndpoint {
 pub struct FluxerConfig {
     pub token: String,
     pub endpoint: FluxerEndpoint,
+    /// The invite link requests Administrator instead of the specific permissions.
+    pub invite_admin: bool,
 }
 
 /// Outbound side: implements the core's [`ChatAdapter`] with Fluxer REST calls.
@@ -686,7 +688,7 @@ pub async fn run(
     // On Fluxer the bot user's ID is the application ID.
     tracing::info!(
         "Fluxer invite link: {webapp}/oauth2/authorize?client_id={bot_id}&scope=bot&permissions={}",
-        botsu_core::INVITE_PERMISSIONS
+        botsu_core::invite_permissions(config.invite_admin)
     );
 
     let chat: Arc<dyn ChatAdapter> = Arc::new(FluxerChat::new(http, bot_id));
