@@ -652,11 +652,8 @@ pub async fn run(
     bot: Arc<Bot>,
     voice: Arc<FluxerVoice>,
 ) -> Result<(), Error> {
-    let (api_url, webapp) = resolve_endpoints(&config.endpoint).await?;
-    tracing::info!(%api_url, "using Fluxer API");
-
-    let http = Arc::new(Http::new(&config.token, api_url.clone()));
-    let bot_id = check_login(&http, &api_url).await?;
+    let (http, bot_id, webapp) = connect_rest(&config).await?;
+    let api_url = http.base_url.clone();
     // On Fluxer the bot user's ID is the application ID.
     tracing::info!(
         "Fluxer invite link: {webapp}/oauth2/authorize?client_id={bot_id}&scope=bot&permissions={}",
@@ -670,6 +667,16 @@ pub async fn run(
         .event_handler(Handler { bot, chat, voice })
         .build();
     client.start().await.map_err(err)
+}
+
+/// Finds the API, checks the token and returns `(REST client, bot user ID, web app address)`.
+/// Also used by the API spike (`examples/api_spike.rs`).
+pub async fn connect_rest(config: &FluxerConfig) -> Result<(Arc<Http>, String, String), Error> {
+    let (api_url, webapp) = resolve_endpoints(&config.endpoint).await?;
+    tracing::info!(%api_url, "using Fluxer API");
+    let http = Arc::new(Http::new(&config.token, api_url.clone()));
+    let bot_id = check_login(&http, &api_url).await?;
+    Ok((http, bot_id, webapp))
 }
 
 /// `(API base with /v1, web app address)`.
