@@ -45,24 +45,26 @@ jobs:
         run: cargo test --workspace
 
   docker:
-    name: publish image
+    name: image (build; publish on master and tags)
     needs: check
-    # Only from master and version tags, never from pull requests.
-    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    # Pull requests build the image without publishing it, so Dockerfile changes are tested
+    # before they reach master. Master and version tags publish.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     env:
-      # Forks (or this repo before the secret is added) skip publishing instead of failing.
-      PUBLISH: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+      # Forks (or this repo without the secret) build but don't publish.
+      PUBLISH: ${{ github.event_name != 'pull_request' && secrets.DOCKERHUB_TOKEN != '' }}
+      # Docker Hub only lets a token with admin scope edit the description, so this one is
+      # separate from DOCKERHUB_TOKEN (Read & Write). Without it the README sync is skipped.
+      SYNC_README: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && secrets.DOCKERHUB_ADMIN_TOKEN != '' }}
     steps:
-      - name: No Docker Hub token
+      - name: Not publishing
         if: env.PUBLISH != 'true'
-        run: echo "::notice::DOCKERHUB_TOKEN secret not set; skipping image publish."
+        run: echo "::notice::Building the image only (pull request, or DOCKERHUB_TOKEN not set)."
 
       - uses: actions/checkout@v7
-        if: env.PUBLISH == 'true'
 
       - uses: docker/setup-buildx-action@v4
-        if: env.PUBLISH == 'true'
 
       - uses: docker/login-action@v4
         if: env.PUBLISH == 'true'
@@ -73,7 +75,6 @@ jobs:
       # latest + sha-<short> on master; 1.2.3 and 1.2 on tags v1.2.3. Also sets OCI labels
       # (source, revision, version) so Docker Hub and Unraid link back to the repo.
       - id: meta
-        if: env.PUBLISH == 'true'
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
@@ -83,13 +84,25 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
+      # The Dockerfile's cargo-chef stage keeps the dependency build in its own layer, which this
+      # cache keeps between runs (mode=max caches the build stages too).
       - uses: docker/build-push-action@v7
-        if: env.PUBLISH == 'true'
         with:
           context: .
           platforms: linux/amd64
-          push: true
+          push: ${{ env.PUBLISH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # README.md → the Docker Hub page. Relative links become links to the GitHub repo.
+      - uses: peter-evans/dockerhub-description@v4
+        if: env.SYNC_README == 'true'
+        with:
+          username: caaarrrlll
+          password: ${{ secrets.DOCKERHUB_ADMIN_TOKEN }}
+          repository: ${{ env.IMAGE }}
+          short-description: Lean self-hosted chat bot for Discord and Fluxer (alerts, moderation, music)
+          readme-filepath: ./README.md
+          enable-url-completion: true
