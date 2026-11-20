@@ -6,7 +6,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use super::import::{self, Target};
-use super::{live_text, mention_text, parse_channel, twitch, youtube, BASELINE, PLACEHOLDERS};
+use super::{
+    escape_md, live_text, mention_text, parse_channel, twitch, youtube, BASELINE, PLACEHOLDERS,
+};
 use crate::command::{Command, CommandContext};
 use crate::error::{Error, Result};
 use crate::permissions::Level;
@@ -146,7 +148,7 @@ async fn set_message(
             format!(
                 "{what} alert text for **{}**:\n{}\nSet it with `{p}{cmd} message <name> [#channel] = <text>` \
                  ({PLACEHOLDERS}); `{p}{cmd} message <name> off` goes back to the default.",
-                found[0].source_name,
+                escape_md(&found[0].source_name),
                 lines.join("\n"),
                 p = ctx.prefix,
             )
@@ -239,8 +241,8 @@ fn quiet_mention(m: &str, names: &HashMap<String, String>) -> String {
     match m {
         "everyone" | "here" => format!("`{}`", mention_text(m)),
         m => match (names.get(m), m.strip_prefix("user:")) {
-            (Some(name), Some(_)) => format!("**{name}**"),
-            (Some(name), None) => format!("role **{name}**"),
+            (Some(name), Some(_)) => format!("**{}**", escape_md(name)),
+            (Some(name), None) => format!("role **{}**", escape_md(name)),
             (None, Some(user)) => format!("user `{user}`"),
             (None, None) => format!("role `{m}`"),
         },
@@ -303,10 +305,22 @@ fn not_found(
     names.dedup();
     let known = match names.len() {
         0 => format!("There are no {what} alerts here yet."),
-        n if n <= 15 => format!("Alerts here: {}.", names.join(", ")),
+        n if n <= 15 => {
+            let names: Vec<String> = names.iter().map(|n| escape_md(n)).collect();
+            format!("Alerts here: {}.", names.join(", "))
+        }
         _ => format!("See `{p}{cmd} list`."),
     };
     Error::Usage(format!("No {what} alerts for `{source}` {place}. {known}"))
+}
+
+/// Whether any channel (any platform) already follows this source. Then the poller owns its
+/// seen-items record, and adding another channel mustn't mark anything as posted.
+fn is_followed(store: &Store, kind: AlertKind, source_id: &str) -> Result<bool> {
+    Ok(store
+        .all_subscriptions(kind)?
+        .iter()
+        .any(|s| s.source_id == source_id))
 }
 
 /// What's customised on a subscription, for `list`.
@@ -471,16 +485,23 @@ impl TubeCommand {
         announce_in_target(
             ctx,
             target,
-            &format!("New uploads from **{name}** will be posted here."),
+            &format!(
+                "New uploads from **{}** will be posted here.",
+                escape_md(&name)
+            ),
         )
         .await?;
 
-        // Everything currently in the feed counts as already posted: only new uploads alert.
-        self.store
-            .mark_seen(AlertKind::YouTube, &channel_id, BASELINE)?;
-        for v in &feed.videos {
+        // A new source: everything currently in the feed counts as already posted, so only new
+        // uploads alert. A source already followed elsewhere keeps the poller's record: marking
+        // the feed here would swallow an upload the poller hasn't announced to the others yet.
+        if !is_followed(&self.store, AlertKind::YouTube, &channel_id)? {
             self.store
-                .mark_seen(AlertKind::YouTube, &channel_id, &v.id)?;
+                .mark_seen(AlertKind::YouTube, &channel_id, BASELINE)?;
+            for v in &feed.videos {
+                self.store
+                    .mark_seen(AlertKind::YouTube, &channel_id, &v.id)?;
+            }
         }
         let added = self.store.add_subscription(&NewSubscription {
             kind: AlertKind::YouTube,
@@ -494,14 +515,17 @@ impl TubeCommand {
         })?;
 
         let mut reply = if added {
-            format!("Subscribed <#{target}> to **{name}**.")
+            format!("Subscribed <#{target}> to **{}**.", escape_md(&name))
         } else {
-            format!("<#{target}> was already subscribed to **{name}**.")
+            format!(
+                "<#{target}> was already subscribed to **{}**.",
+                escape_md(&name)
+            )
         };
         if let Some(latest) = feed.videos.first() {
             reply.push_str(&format!(
                 " Latest video: **{}** (won't be reposted).",
-                latest.title
+                escape_md(&latest.title)
             ));
         }
         ctx.reply(&reply).await?;
@@ -560,11 +584,13 @@ impl TubeCommand {
                 } else {
                     feed.channel_name.clone()
                 };
-                self.store
-                    .mark_seen(AlertKind::YouTube, &entry.channel_id, BASELINE)?;
-                for v in &feed.videos {
+                if !is_followed(&self.store, AlertKind::YouTube, &entry.channel_id)? {
                     self.store
-                        .mark_seen(AlertKind::YouTube, &entry.channel_id, &v.id)?;
+                        .mark_seen(AlertKind::YouTube, &entry.channel_id, BASELINE)?;
+                    for v in &feed.videos {
+                        self.store
+                            .mark_seen(AlertKind::YouTube, &entry.channel_id, &v.id)?;
+                    }
                 }
                 let new = self.store.add_subscription(&NewSubscription {
                     kind: AlertKind::YouTube,
@@ -737,7 +763,7 @@ impl Command for TubeCommand {
                         .map(|s| {
                             format!(
                                 "• **{}** (`{}`) → <#{}>{}{}",
-                                s.source_name,
+                                escape_md(&s.source_name),
                                 s.source_id,
                                 s.channel_id,
                                 if s.include_shorts { " (Shorts on)" } else { "" },
@@ -831,22 +857,27 @@ impl TwitchCommand {
             target,
             &format!(
                 "**{}** going live on Twitch will be posted here.",
-                user.display_name
+                escape_md(&user.display_name)
             ),
         )
         .await?;
 
-        // If they're live right now, that broadcast counts as already announced.
+        // A new source that's live right now: that broadcast counts as already announced. If
+        // the streamer is already followed elsewhere, the poller keeps the record: a broadcast
+        // it hasn't announced yet still goes to every channel, this one included.
         let live = client
             .live_streams(std::slice::from_ref(&user.id))
             .await
             .map_err(|e| Error::internal("Twitch stream lookup", e))?;
-        self.store
-            .mark_seen(AlertKind::Twitch, &user.id, BASELINE)?;
-        for s in &live {
-            self.store.mark_seen(AlertKind::Twitch, &user.id, &s.id)?;
+        let followed = is_followed(&self.store, AlertKind::Twitch, &user.id)?;
+        if !followed {
             self.store
-                .set_last_live_at(AlertKind::Twitch, &user.id, crate::storage::now())?;
+                .mark_seen(AlertKind::Twitch, &user.id, BASELINE)?;
+            for s in &live {
+                self.store.mark_seen(AlertKind::Twitch, &user.id, &s.id)?;
+                self.store
+                    .set_last_live_at(AlertKind::Twitch, &user.id, crate::storage::now())?;
+            }
         }
 
         let added = self.store.add_subscription(&NewSubscription {
@@ -861,18 +892,25 @@ impl TwitchCommand {
         })?;
 
         let mut reply = if added {
-            format!("Subscribed <#{target}> to **{}**.", user.display_name)
+            format!(
+                "Subscribed <#{target}> to **{}**.",
+                escape_md(&user.display_name)
+            )
         } else {
             format!(
                 "<#{target}> was already subscribed to **{}**.",
-                user.display_name
+                escape_md(&user.display_name)
             )
         };
         match live.first() {
-            Some(s) => reply.push_str(&format!(
-                " They're live right now (not announced, since it already started):\n{}",
-                live_text(s)
-            )),
+            Some(s) if self.store.is_seen(AlertKind::Twitch, &user.id, &s.id)? => {
+                reply.push_str(&format!(
+                    " They're live right now (not announced, since it already started):\n{}",
+                    live_text(s)
+                ))
+            }
+            Some(_) => reply
+                .push_str(" They just went live: it'll be posted here within a couple of minutes."),
             None => reply.push_str(" They're offline right now."),
         }
         ctx.reply(&reply).await?;
@@ -1027,8 +1065,8 @@ impl Command for TwitchCommand {
                         .iter()
                         .map(|s| {
                             format!(
-                                "• **{}** (twitch.tv/{}) → <#{}>{}",
-                                s.source_name,
+                                "• **{}** (`twitch.tv/{}`) → <#{}>{}",
+                                escape_md(&s.source_name),
                                 s.source_key,
                                 s.channel_id,
                                 list_extras(s, &names)

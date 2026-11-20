@@ -193,7 +193,7 @@ is skipped and listed. Nothing already published or already live is posted.
 | Non-owner `!tube import` and `!tube shorts` get "Only bot owners can do that" with their ID | | |
 | `!tube add @SomeChannel` replies with the channel name and latest video, no flood of old videos | | ✅ 2026-11-20 (IDs and @handle) |
 | A new Short is not posted; after `!tube shorts <name> on` it is | | |
-| A live stream posts "is live on YouTube"; a scheduled one posts only when it starts | | live ✅ 2026-11-20 (scheduled not checked) |
+| A live stream posts "is live on YouTube"; a scheduled one posts only when it starts | live ✅ 2026-11-20 (scheduled not checked) | live ✅ 2026-11-20 (scheduled not checked) |
 | `!tube add <link> #other-channel` posts the notice in the other channel | | |
 | `!tube list` shows it; `!tube remove <name>` removes it | | |
 | `!tube import` and `!twitch import` with the old bot's list: summary shows added / skipped | | |
@@ -203,7 +203,8 @@ is skipped and listed. Nothing already published or already live is posted.
 | `!tube message <name> = …` changes the next alert's text; `!tube list` shows "custom text"; `off` restores it | | set and listed ✅ 2026-11-20; next alert pending |
 | `!tube mention <name> @role` pings the role on the next alert; a non-mod is refused; `everyone` needs admin | | set and listed ✅ 2026-11-20; next alert pending |
 | Same source in two channels: `!tube remove <name> #one` removes only that one | | |
-| A streamer going live is posted once (within ~2 min), not again on restart | ✅ 2026-11-20 (posted; restart not checked) | `add` saw them live and didn't announce ✅; go-live alert pending |
+| A streamer going live is posted once (within ~2 min), not again on restart | ✅ 2026-11-20 (posted; restart while live not checked) | ✅ 2026-11-20 (posted; restart while live not checked) |
+| `!twitch list` with names containing `_` (e.g. `Streamer_`) shows them as typed, no stray italics | | |
 
 Quick way to see an alert without waiting for a real upload: subscribe to a channel that posts
 often (news channels upload many times a day), or to a big streamer who's about to go live.
