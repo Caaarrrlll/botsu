@@ -59,7 +59,8 @@ whether Fluxer sends a bot the "who's already in voice" snapshot.
 
 `crates/botsu-fluxer/examples/api_spike.rs` runs botsu's own `FluxerChat` calls (plus a few raw ones
 for limits) against the instance and prints PASS/FAIL per check. Needs a test server, a throwaway
-text channel, a second account (not an admin) and a role below the bot's highest role:
+text channel and a second account (not an admin). For the role, pass `new` and the spike makes
+a temporary one (or give an existing role below the bot's highest role):
 
 ```powershell
 ./scripts/run.ps1 -Example api_spike -- <guild> <channel> <target user> <role> [--old <message id>] [--kick] [--ban]
