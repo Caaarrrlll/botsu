@@ -4,7 +4,7 @@
 //! fluxer-rust update breaks something, the fix should stay inside this crate.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -363,6 +363,8 @@ pub struct FluxerVoice {
     states: std::sync::Mutex<HashMap<(String, String), String>>,
     conns: tokio::sync::Mutex<HashMap<String, FluxerVoiceConnection>>,
     playback: std::sync::Mutex<HashMap<String, Playback>>,
+    /// guild → volume in percent, shared with that server's player (it scales every frame).
+    volumes: std::sync::Mutex<HashMap<String, Arc<AtomicU16>>>,
 }
 
 /// One server's running playback task and its pause flag.
@@ -378,6 +380,7 @@ impl FluxerVoice {
             states: Default::default(),
             conns: Default::default(),
             playback: Default::default(),
+            volumes: Default::default(),
         })
     }
 
@@ -391,6 +394,15 @@ impl FluxerVoice {
             .unwrap_or_else(|p| p.into_inner())
             .clone()
             .ok_or_else(|| err("not connected to Fluxer yet"))
+    }
+
+    fn volume(&self, guild_id: &str) -> Arc<AtomicU16> {
+        self.volumes
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .entry(guild_id.to_owned())
+            .or_insert_with(|| Arc::new(AtomicU16::new(100)))
+            .clone()
     }
 
     fn stop_playback(&self, guild_id: &str) {
@@ -464,14 +476,15 @@ impl VoiceAdapter for FluxerVoice {
         };
         self.stop_playback(guild_id);
         let paused = Arc::new(AtomicBool::new(false));
+        let volume = self.volume(guild_id);
         let mut task = {
             let conns = self.conns.lock().await;
             let conn = conns
                 .get(guild_id)
                 .ok_or_else(|| Error::Usage("I'm not in a voice channel; join first.".into()))?;
             // botsu's patched player (vendor/fluxer-rust): reconnect flags, stdin input, errors
-            // returned instead of posted to a channel, pausing.
-            conn.play_input(&source, stdin, paused.clone())
+            // returned instead of posted to a channel, pausing, volume.
+            conn.play_input(&source, stdin, paused.clone(), volume)
                 .map_err(|e| err(format!("playing failed: {e}")))?
         };
         self.playback
@@ -533,6 +546,12 @@ impl VoiceAdapter for FluxerVoice {
             .unwrap_or_else(|p| p.into_inner())
             .get(guild_id)
             .is_some_and(|p| !p.task.is_finished() && !p.paused.load(Ordering::Relaxed))
+    }
+
+    async fn set_volume(&self, guild_id: &str, percent: u16) -> botsu_core::Result<()> {
+        // The player reads it for every 20 ms frame, so this applies right away.
+        self.volume(guild_id).store(percent, Ordering::Relaxed);
+        Ok(())
     }
 
     async fn set_paused(&self, guild_id: &str, paused: bool) -> botsu_core::Result<()> {

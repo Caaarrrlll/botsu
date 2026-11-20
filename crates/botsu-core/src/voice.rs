@@ -48,6 +48,16 @@ pub trait VoiceAdapter: Send + Sync {
         })
     }
 
+    /// Sets the volume in percent (0 to [`VOLUME_MAX`], 100 = unchanged) for what's playing and
+    /// everything played later in this server.
+    async fn set_volume(&self, guild_id: &str, percent: u16) -> Result<()> {
+        let _ = (guild_id, percent);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "volume",
+        })
+    }
+
     async fn leave(&self, guild_id: &str) -> Result<()>;
 
     /// Whether the bot is currently in a voice channel in this server.
@@ -56,6 +66,9 @@ pub trait VoiceAdapter: Send + Sync {
     /// Whether audio is playing right now in this server (for the idle timer).
     async fn is_playing(&self, guild_id: &str) -> bool;
 }
+
+/// Highest volume in percent. Above 100 the audio is amplified and may clip.
+pub const VOLUME_MAX: u16 = 150;
 
 /// Leave a voice channel after this long without playing anything.
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);

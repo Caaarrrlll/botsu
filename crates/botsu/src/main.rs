@@ -109,7 +109,7 @@ async fn main() -> Result<()> {
     }
     let ytdlp = YtDlp::new(&config.data_dir, config.ytdlp.clone(), http.clone());
     ytdlp::spawn_maintenance(ytdlp.clone());
-    bot.register(music::group(&Music::new(voices, ytdlp)));
+    bot.register(music::group(&Music::new(voices, ytdlp, store.clone())));
     let bot = Arc::new(bot);
 
     // One task per platform. If any adapter dies, exit so Docker restarts us.

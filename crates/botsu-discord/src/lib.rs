@@ -18,7 +18,7 @@ use serenity::all::{
 use serenity::async_trait;
 use songbird::input::core::io::ReadOnlySource;
 use songbird::input::{ChildContainer, Input, RawAdapter};
-use songbird::tracks::{PlayMode, TrackHandle};
+use songbird::tracks::{PlayMode, Track, TrackHandle};
 use songbird::{SerenityInit, Songbird};
 
 #[derive(Debug, Clone)]
@@ -321,6 +321,8 @@ pub struct DiscordVoice {
     states: Mutex<HashMap<(u64, u64), u64>>,
     /// guild → the track playing (or last played) there, for the idle timer.
     tracks: Mutex<HashMap<u64, TrackHandle>>,
+    /// guild → volume (1.0 = unchanged) for tracks started there.
+    volumes: Mutex<HashMap<u64, f32>>,
     /// REST client, set once connected: asks Discord directly when the gateway's voice states
     /// don't know where a user is.
     http: std::sync::OnceLock<Arc<Http>>,
@@ -332,6 +334,7 @@ impl DiscordVoice {
             songbird: Songbird::serenity(),
             states: Mutex::new(HashMap::new()),
             tracks: Mutex::new(HashMap::new()),
+            volumes: Mutex::new(HashMap::new()),
             http: std::sync::OnceLock::new(),
         })
     }
@@ -342,6 +345,15 @@ impl DiscordVoice {
 
     fn tracks(&self) -> std::sync::MutexGuard<'_, HashMap<u64, TrackHandle>> {
         self.tracks.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn volume(&self, guild: u64) -> f32 {
+        self.volumes
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&guild)
+            .copied()
+            .unwrap_or(1.0)
     }
 
     fn set_state(&self, guild: GuildId, user: UserId, channel: Option<ChannelId>) {
@@ -440,9 +452,10 @@ impl VoiceAdapter for DiscordVoice {
             .get(GuildId::new(snowflake(guild_id)?))
             .ok_or_else(|| Error::Usage("I'm not in a voice channel; join first.".into()))?;
         let input = ffmpeg_input(input)?;
+        let track = Track::from(input).volume(self.volume(snowflake(guild_id)?));
         let (track, channel) = {
             let mut call = call.lock().await;
-            (call.play_only_input(input), call.current_channel())
+            (call.play_only(track), call.current_channel())
         };
         self.tracks().insert(snowflake(guild_id)?, track.clone());
 
@@ -505,6 +518,20 @@ impl VoiceAdapter for DiscordVoice {
             track.get_info().await.map(|s| s.playing),
             Ok(PlayMode::Play)
         )
+    }
+
+    async fn set_volume(&self, guild_id: &str, percent: u16) -> botsu_core::Result<()> {
+        let guild = snowflake(guild_id)?;
+        let volume = f32::from(percent) / 100.0;
+        self.volumes
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(guild, volume);
+        if let Some(track) = self.tracks().get(&guild).cloned() {
+            // Fails only if the track already ended; the next one uses the new volume anyway.
+            let _ = track.set_volume(volume);
+        }
+        Ok(())
     }
 
     async fn set_paused(&self, guild_id: &str, paused: bool) -> botsu_core::Result<()> {

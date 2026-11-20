@@ -95,8 +95,11 @@ handed to ffmpeg. It then polls `is_playing` every second (after a 5 s grace) un
 or a skip (`Notify`, new per player task) arrives. `music pause|resume` calls the adapter's
 `set_paused` and marks the `Guild` paused: the player doesn't end a paused track, and gives a
 resumed one the 5 s grace again. `is_playing` is false while paused, so the idle timer still
-leaves after 10 minutes. Nothing is stored in the database; a restart
-empties queues.
+leaves after 10 minutes. `music volume <0-150>` saves the server's volume in `guild_settings`
+(`music_volume`; unset = 100) and calls the adapter's `set_volume`, which also applies to later
+tracks; the core hands the saved value to the adapter whenever it joins. Discord: songbird's track
+volume. Fluxer: the vendored player scales each 20 ms frame (clamped, so above 100 can clip).
+Queues aren't stored; a restart empties them.
 
 `ytdlp.rs`: botsu downloads the standalone yt-dlp into `<data dir>/bin` (no Python needed),
 updates it with `-U` daily and on `music update`; `BOTSU_YTDLP` uses another copy. YouTube needs a
@@ -316,7 +319,7 @@ Primary key `(platform, guild_id, number)`; index on `(platform, guild_id, targe
 
 ### `guild_settings` (migration 4)
 
-Key/value per `(platform, guild_id, key)`. Keys: `modlog_channel`.
+Key/value per `(platform, guild_id, key)`. Keys: `modlog_channel`, `music_volume`.
 
 ## Configuration
 
