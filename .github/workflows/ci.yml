@@ -54,10 +54,6 @@ jobs:
     env:
       # Forks (or this repo without the secret) build but don't publish.
       PUBLISH: ${{ github.event_name != 'pull_request' && secrets.DOCKERHUB_TOKEN != '' }}
-      # Docker Hub refuses description edits from a Read & Write token; it takes Read, Write &
-      # Delete. Kept separate from DOCKERHUB_TOKEN so the delete-capable token is only handed to
-      # the README step. Without it the README sync is skipped.
-      SYNC_README: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && secrets.DOCKERHUB_README_TOKEN != '' }}
     steps:
       - name: Not publishing
         if: env.PUBLISH != 'true'
@@ -97,13 +93,3 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # README.md → the Docker Hub page. Relative links become links to the GitHub repo.
-      - uses: peter-evans/dockerhub-description@v5
-        if: env.SYNC_README == 'true'
-        with:
-          username: caaarrrlll
-          password: ${{ secrets.DOCKERHUB_README_TOKEN }}
-          repository: ${{ env.IMAGE }}
-          short-description: Lean self-hosted chat bot for Discord and Fluxer (alerts, moderation, music)
-          readme-filepath: ./README.md
-          enable-url-completion: true
