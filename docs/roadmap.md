@@ -114,7 +114,7 @@ Get the project building and publishing itself before the bigger features land.
 - [x] **Invite links in the startup log**, one per connected platform: Discord from `ready.application.id`, Fluxer from the bot's user ID plus the discovered web app address. Permissions in `botsu_core::INVITE_PERMISSIONS` (now including Embed Links for alert previews). `*_APPLICATION_ID` in `.env.example` are kept as optional, unused reference values.
 - [x] `docs/install-linux.md` + `deploy/systemd/botsu.service`: build from source, `/etc/botsu/botsu.env` (600), `DynamicUser` + `StateDirectory` (`/var/lib/botsu`), hardened sandbox (`systemd-analyze security`: 3.2 OK). Phase 6 adds ffmpeg and yt-dlp.
 - [x] GitHub Releases carry prebuilt binaries (`.github/workflows/release.yml`, on `v*` tags; run by hand to only build): Linux x86_64 `.tar.gz` and `.deb` (built on Ubuntu 22.04, glibc 2.35+, so Fedora and Arch too) and Windows x86_64 `.zip`. Guides: install-linux.md (`.deb`, `.tar.gz`, source builds for Debian/Ubuntu, Fedora, Arch), install-windows.md.
-- [ ] First release: run the Release workflow by hand to check the builds, then tag `v0.1.0`.
+- [ ] First release: tag `v0.1.0`. Dry run passed 2026-11-20 (run 44696458540: .tar.gz, .deb, .zip; the Windows build starts and creates `dataotsu.env`).
 
 **Done when:** pushing to `master` publishes a new image to Docker Hub, and Unraid can update to it through the template.
 
