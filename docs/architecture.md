@@ -135,6 +135,8 @@ platform.
 | `created_by` | TEXT | User ID that added it |
 | `created_at` | INTEGER | Unix seconds |
 | `include_shorts` | INTEGER (0/1) | YouTube: also post Shorts. Default 0 (migration 2) |
+| `message` | TEXT NULL | Custom alert text with `{name}`, `{title}`, `{url}`, `{game}`, `{event}`; NULL = default text. Without `{url}` the link is added on its own line (migration 5) |
+| `mention` | TEXT NULL | Role ID, `everyone` or `here`, put in front of each alert (migration 5) |
 
 Unique on `(kind, source_id, platform, channel_id)`.
 

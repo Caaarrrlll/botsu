@@ -5,28 +5,227 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use super::import::{self, Target};
-use super::{live_text, parse_channel, twitch, youtube, BASELINE};
+use super::{live_text, mention_text, parse_channel, twitch, youtube, BASELINE, PLACEHOLDERS};
 use crate::command::{Command, CommandContext};
 use crate::error::{Error, Result};
+use crate::permissions::Level;
 use crate::storage::{AlertKind, NewSubscription, Scope, Store, Subscription};
 
-/// Splits `"add <source> [#channel]"` into the subcommand, the source, and the target channel
-/// (the current channel when none is given).
-fn split_args(ctx: &CommandContext) -> (String, String, String) {
-    let mut words: Vec<&str> = ctx.args.split_whitespace().collect();
-    let sub = if words.is_empty() {
-        String::new()
-    } else {
-        words.remove(0).to_lowercase()
-    };
-    let target = match words.last().and_then(|w| parse_channel(w)) {
-        Some(id) => {
-            words.pop();
-            id
+/// Splits `"<sub> <source> [#channel]"` into the subcommand, the source, and the channel if one
+/// was given as the last word.
+fn split_args(ctx: &CommandContext) -> (String, String, Option<String>) {
+    let (sub, rest) = split_sub(ctx);
+    let (source, channel) = split_channel(rest);
+    (sub, source, channel)
+}
+
+/// The subcommand (lower case) and everything after it, line breaks kept.
+fn split_sub(ctx: &CommandContext) -> (String, &str) {
+    let args = ctx.args.trim_start();
+    match args.split_once(char::is_whitespace) {
+        Some((sub, rest)) => (sub.to_lowercase(), rest.trim()),
+        None => (args.to_lowercase(), ""),
+    }
+}
+
+/// `"<source> [#channel]"` → the source and the channel, if the last word is one.
+fn split_channel(text: &str) -> (String, Option<String>) {
+    let mut words: Vec<&str> = text.split_whitespace().collect();
+    let channel = words.last().and_then(|w| parse_channel(w));
+    if channel.is_some() {
+        words.pop();
+    }
+    (words.join(" "), channel)
+}
+
+/// Keeps the subscriptions posting to `channel`, if one was given.
+fn in_channel(found: Vec<Subscription>, channel: Option<&str>) -> Vec<Subscription> {
+    match channel {
+        Some(c) => found.into_iter().filter(|s| s.channel_id == c).collect(),
+        None => found,
+    }
+}
+
+/// What `message` was asked to do.
+#[derive(Debug, PartialEq, Eq)]
+enum MessageArg {
+    Show,
+    Clear,
+    Set(String),
+}
+
+/// `"<source> [#channel] = <text>"`, `"<source> [#channel] off"` or `"<source> [#channel]"`.
+fn parse_message(rest: &str) -> (String, Option<String>, MessageArg) {
+    if let Some((left, text)) = rest.split_once('=') {
+        let (source, channel) = split_channel(left);
+        let text = text.trim();
+        let arg = if text.is_empty() {
+            MessageArg::Show
+        } else {
+            MessageArg::Set(text.to_owned())
+        };
+        return (source, channel, arg);
+    }
+    let (source, channel) = split_channel(rest);
+    match source.rsplit_once(' ') {
+        Some((s, last)) if is_off(last) => (s.trim().to_owned(), channel, MessageArg::Clear),
+        _ => (source, channel, MessageArg::Show),
+    }
+}
+
+fn is_off(word: &str) -> bool {
+    matches!(
+        word.to_lowercase().as_str(),
+        "off" | "none" | "reset" | "clear" | "default"
+    )
+}
+
+/// What `mention` was asked to do.
+#[derive(Debug, PartialEq, Eq)]
+enum MentionArg {
+    Clear,
+    Everyone,
+    Here,
+    Role(String),
+}
+
+/// `"<source> [#channel] <@role | role ID | everyone | here | off>"`.
+fn parse_mention(rest: &str) -> Option<(String, Option<String>, MentionArg)> {
+    let (left, last) = rest.trim().rsplit_once(char::is_whitespace)?;
+    let arg = match last.to_lowercase().trim_start_matches('@') {
+        "everyone" => MentionArg::Everyone,
+        "here" => MentionArg::Here,
+        w if is_off(w) => MentionArg::Clear,
+        _ => {
+            let id = last
+                .strip_prefix("<@&")
+                .and_then(|r| r.strip_suffix('>'))
+                .unwrap_or(last);
+            if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            MentionArg::Role(id.to_owned())
         }
-        None => ctx.message.channel_id.clone(),
     };
-    (sub, words.join(" "), target)
+    let (source, channel) = split_channel(left);
+    Some((source, channel, arg))
+}
+
+/// `message`, shared by `tube` and `twitch`: show, set or clear the custom alert text of the
+/// matching subscriptions (mods).
+async fn set_message(
+    ctx: &CommandContext,
+    store: &Store,
+    (what, cmd): (&str, &str),
+    found: Vec<Subscription>,
+    arg: MessageArg,
+) -> Result<()> {
+    let reply = match arg {
+        MessageArg::Show => {
+            let lines: Vec<String> = found
+                .iter()
+                .map(|s| match &s.message {
+                    Some(m) => format!("• <#{}>: `{m}`", s.channel_id),
+                    None => format!("• <#{}>: the default text", s.channel_id),
+                })
+                .collect();
+            format!(
+                "{what} alert text for **{}**:\n{}\nSet it with `{p}{cmd} message <name> [#channel] = <text>` \
+                 ({PLACEHOLDERS}); `{p}{cmd} message <name> off` goes back to the default.",
+                found[0].source_name,
+                lines.join("\n"),
+                p = ctx.prefix,
+            )
+        }
+        MessageArg::Clear => {
+            require(ctx, Level::Mod)?;
+            let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
+            let n = store.set_alert_message(&ids, None)?;
+            format!("Back to the default text ({n} alert(s) updated).")
+        }
+        MessageArg::Set(text) => {
+            require(ctx, Level::Mod)?;
+            if text.chars().count() > 1500 {
+                return Err(Error::Usage("Keep the text under 1500 characters.".into()));
+            }
+            let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
+            let n = store.set_alert_message(&ids, Some(&text))?;
+            format!("Alert text set ({n} alert(s) updated).")
+        }
+    };
+    ctx.reply(&reply).await?;
+    Ok(())
+}
+
+/// `mention`, shared by `tube` and `twitch`: who gets pinged by the matching subscriptions'
+/// alerts. Roles: mods; @everyone and @here: admins.
+async fn set_mention(
+    ctx: &CommandContext,
+    store: &Store,
+    found: Vec<Subscription>,
+    arg: MentionArg,
+) -> Result<()> {
+    let value = match arg {
+        MentionArg::Clear => None,
+        MentionArg::Everyone => Some("everyone".to_owned()),
+        MentionArg::Here => Some("here".to_owned()),
+        MentionArg::Role(id) => Some(id),
+    };
+    let level = match value.as_deref() {
+        Some("everyone" | "here") => Level::Admin,
+        _ => Level::Mod,
+    };
+    require(ctx, level)?;
+    if let (Some(id), Some(guild)) = (&value, ctx.message.guild_id.as_deref()) {
+        if !matches!(id.as_str(), "everyone" | "here") {
+            // Unknown roles are refused; if the roles can't be read, take the ID as given.
+            if let Ok(roles) = ctx.chat.roles(guild).await {
+                if !roles.iter().any(|r| &r.id == id) {
+                    return Err(Error::Usage(format!("`{id}` isn't a role in this server.")));
+                }
+            }
+        }
+    }
+    let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
+    let n = store.set_alert_mention(&ids, value.as_deref())?;
+    let reply = match &value {
+        Some(v) => format!(
+            "Alerts will mention {} ({n} alert(s) updated). For it to ping, the role must be \
+             mentionable or I need permission to mention everyone.",
+            quiet_mention(v)
+        ),
+        None => format!("Alerts won't mention anyone ({n} alert(s) updated)."),
+    };
+    ctx.reply(&reply).await?;
+    Ok(())
+}
+
+fn require(ctx: &CommandContext, level: Level) -> Result<()> {
+    if ctx.level >= level {
+        Ok(())
+    } else {
+        Err(Error::Usage(format!("You need to be {level} to do that.")))
+    }
+}
+
+/// A stored mention for replies and lists: in a code span, so it doesn't ping anyone.
+fn quiet_mention(m: &str) -> String {
+    match m {
+        "everyone" | "here" => format!("`{}`", mention_text(m)),
+        role => format!("role `{role}`"),
+    }
+}
+
+/// What's customised on a subscription, for `list`.
+fn list_extras(s: &Subscription) -> String {
+    let mut out = String::new();
+    if let Some(m) = &s.mention {
+        out.push_str(&format!(" · mentions {}", quiet_mention(m)));
+    }
+    if s.message.is_some() {
+        out.push_str(" · custom text");
+    }
+    out
 }
 
 /// For `import`: everything after the subcommand, keeping line breaks, with an optional
@@ -151,9 +350,11 @@ impl TubeCommand {
         format!(
             "YouTube upload alerts:\n\
              `{p}tube add <channel link | @handle | channel ID> [#channel]`\n\
-             `{p}tube remove <name | @handle | channel ID>`\n\
+             `{p}tube remove <name | @handle | channel ID> [#channel]`\n\
              `{p}tube list`\n\
              `{p}tube shorts <name | channel ID> on|off` (Shorts are off by default)\n\
+             `{p}tube message <name> [#channel] = <text>` / `off`: custom alert text (mods)\n\
+             `{p}tube mention <name> [#channel] <@role | everyone | here | off>` (mods; everyone/here: admins)\n\
              `{p}tube import [#channel]` + a pasted list with channel IDs on the next lines"
         )
     }
@@ -344,17 +545,34 @@ impl TubeCommand {
         Ok(())
     }
 
-    async fn remove(&self, ctx: &CommandContext, source: &str) -> Result<()> {
+    /// Like `find`, but an empty result is an error for the user. `channel` narrows it down.
+    async fn find_some(
+        &self,
+        ctx: &CommandContext,
+        source: &str,
+        channel: Option<&str>,
+    ) -> Result<Vec<Subscription>> {
         if source.is_empty() {
             return Err(Error::Usage(Self::usage(&ctx.prefix)));
         }
-        let found = self.find(ctx, source).await?;
+        let found = in_channel(self.find(ctx, source).await?, channel);
         if found.is_empty() {
+            let place = channel.map_or("here".to_owned(), |c| format!("in <#{c}>"));
             return Err(Error::Usage(format!(
-                "No YouTube alerts for `{source}` here. See `{}tube list`.",
+                "No YouTube alerts for `{source}` {place}. See `{}tube list`.",
                 ctx.prefix
             )));
         }
+        Ok(found)
+    }
+
+    async fn remove(
+        &self,
+        ctx: &CommandContext,
+        source: &str,
+        channel: Option<&str>,
+    ) -> Result<()> {
+        let found = self.find_some(ctx, source, channel).await?;
         let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
         let n = self.store.delete_subscriptions(&ids)?;
         ctx.reply(&format!("Removed {n} YouTube alert(s).")).await?;
@@ -369,7 +587,12 @@ impl Command for TubeCommand {
     }
 
     fn help(&self) -> &'static str {
-        "YouTube upload alerts: add, remove, list."
+        "YouTube upload alerts: add, remove, list, message, mention."
+    }
+
+    // `message` and `mention` need mod; the rest is open to everyone.
+    fn needs_level(&self) -> bool {
+        true
     }
 
     async fn run(&self, ctx: CommandContext) -> Result<()> {
@@ -386,9 +609,25 @@ impl Command for TubeCommand {
         }
         let (sub, source, target) = split_args(&ctx);
         match sub.as_str() {
-            "add" | "subscribe" => self.add(&ctx, &source, &target).await,
-            "remove" | "unsubscribe" | "delete" | "del" => self.remove(&ctx, &source).await,
-            "shorts" => self.shorts(&ctx, &source).await,
+            "add" | "subscribe" => {
+                let target = target.unwrap_or_else(|| ctx.message.channel_id.clone());
+                self.add(&ctx, &source, &target).await
+            }
+            "remove" | "unsubscribe" | "delete" | "del" => {
+                self.remove(&ctx, &source, target.as_deref()).await
+            }
+            "shorts" => self.shorts(&ctx, split_sub(&ctx).1).await,
+            "message" | "text" => {
+                let (source, channel, arg) = parse_message(split_sub(&ctx).1);
+                let found = self.find_some(&ctx, &source, channel.as_deref()).await?;
+                set_message(&ctx, &self.store, ("YouTube", "tube"), found, arg).await
+            }
+            "mention" | "ping" => {
+                let (source, channel, arg) = parse_mention(split_sub(&ctx).1)
+                    .ok_or_else(|| Error::Usage(Self::usage(&ctx.prefix)))?;
+                let found = self.find_some(&ctx, &source, channel.as_deref()).await?;
+                set_mention(&ctx, &self.store, found, arg).await
+            }
             "list" => {
                 let subs = self.store.list_subscriptions(
                     AlertKind::YouTube,
@@ -405,11 +644,12 @@ impl Command for TubeCommand {
                         .iter()
                         .map(|s| {
                             format!(
-                                "• **{}** (`{}`) → <#{}>{}",
+                                "• **{}** (`{}`) → <#{}>{}{}",
                                 s.source_name,
                                 s.source_id,
                                 s.channel_id,
-                                if s.include_shorts { " (Shorts on)" } else { "" }
+                                if s.include_shorts { " (Shorts on)" } else { "" },
+                                list_extras(s)
                             )
                         })
                         .collect();
@@ -440,10 +680,41 @@ impl TwitchCommand {
         format!(
             "Twitch live alerts:\n\
              `{p}twitch add <name | twitch.tv link> [#channel]`\n\
-             `{p}twitch remove <name>`\n\
+             `{p}twitch remove <name> [#channel]`\n\
              `{p}twitch list`\n\
+             `{p}twitch message <name> [#channel] = <text>` / `off`: custom alert text (mods)\n\
+             `{p}twitch mention <name> [#channel] <@role | everyone | here | off>` (mods; everyone/here: admins)\n\
              `{p}twitch import [#channel]` + a pasted list of names on the next lines"
         )
+    }
+
+    /// This server's subscriptions for a streamer (name or link), narrowed to `channel` if
+    /// given. Empty is an error for the user.
+    fn find_some(
+        &self,
+        ctx: &CommandContext,
+        source: &str,
+        channel: Option<&str>,
+    ) -> Result<Vec<Subscription>> {
+        if source.is_empty() {
+            return Err(Error::Usage(Self::usage(&ctx.prefix)));
+        }
+        let login = twitch::parse_login(source).unwrap_or_else(|| source.to_owned());
+        let found = self.store.find_subscriptions(
+            AlertKind::Twitch,
+            ctx.message.platform,
+            scope(ctx),
+            &login,
+        )?;
+        let found = in_channel(found, channel);
+        if found.is_empty() {
+            let place = channel.map_or("here".to_owned(), |c| format!("in <#{c}>"));
+            return Err(Error::Usage(format!(
+                "No Twitch alerts for `{login}` {place}. See `{}twitch list`.",
+                ctx.prefix
+            )));
+        }
+        Ok(found)
     }
 
     fn client(&self) -> Result<&twitch::Twitch> {
@@ -605,7 +876,12 @@ impl Command for TwitchCommand {
     }
 
     fn help(&self) -> &'static str {
-        "Twitch live alerts: add, remove, list."
+        "Twitch live alerts: add, remove, list, message, mention."
+    }
+
+    // `message` and `mention` need mod; the rest is open to everyone.
+    fn needs_level(&self) -> bool {
+        true
     }
 
     async fn run(&self, ctx: CommandContext) -> Result<()> {
@@ -622,24 +898,23 @@ impl Command for TwitchCommand {
         }
         let (sub, source, target) = split_args(&ctx);
         match sub.as_str() {
-            "add" | "subscribe" => self.add(&ctx, &source, &target).await,
+            "add" | "subscribe" => {
+                let target = target.unwrap_or_else(|| ctx.message.channel_id.clone());
+                self.add(&ctx, &source, &target).await
+            }
+            "message" | "text" => {
+                let (source, channel, arg) = parse_message(split_sub(&ctx).1);
+                let found = self.find_some(&ctx, &source, channel.as_deref())?;
+                set_message(&ctx, &self.store, ("Twitch", "twitch"), found, arg).await
+            }
+            "mention" | "ping" => {
+                let (source, channel, arg) = parse_mention(split_sub(&ctx).1)
+                    .ok_or_else(|| Error::Usage(Self::usage(&ctx.prefix)))?;
+                let found = self.find_some(&ctx, &source, channel.as_deref())?;
+                set_mention(&ctx, &self.store, found, arg).await
+            }
             "remove" | "unsubscribe" | "delete" | "del" => {
-                if source.is_empty() {
-                    return Err(Error::Usage(Self::usage(&ctx.prefix)));
-                }
-                let login = twitch::parse_login(&source).unwrap_or(source);
-                let found = self.store.find_subscriptions(
-                    AlertKind::Twitch,
-                    ctx.message.platform,
-                    scope(&ctx),
-                    &login,
-                )?;
-                if found.is_empty() {
-                    return Err(Error::Usage(format!(
-                        "No Twitch alerts for `{login}` here. See `{}twitch list`.",
-                        ctx.prefix
-                    )));
-                }
+                let found = self.find_some(&ctx, &source, target.as_deref())?;
                 let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
                 let n = self.store.delete_subscriptions(&ids)?;
                 ctx.reply(&format!("Removed {n} Twitch alert(s).")).await?;
@@ -661,8 +936,11 @@ impl Command for TwitchCommand {
                         .iter()
                         .map(|s| {
                             format!(
-                                "• **{}** (twitch.tv/{}) → <#{}>",
-                                s.source_name, s.source_key, s.channel_id
+                                "• **{}** (twitch.tv/{}) → <#{}>{}",
+                                s.source_name,
+                                s.source_key,
+                                s.channel_id,
+                                list_extras(s)
                             )
                         })
                         .collect();
@@ -673,5 +951,69 @@ impl Command for TwitchCommand {
             }
             _ => Err(Error::Usage(Self::usage(&ctx.prefix))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_args() {
+        assert_eq!(
+            parse_message("The Axeman <#5> = {name} is up! {url}"),
+            (
+                "The Axeman".to_owned(),
+                Some("5".to_owned()),
+                MessageArg::Set("{name} is up! {url}".to_owned())
+            )
+        );
+        assert_eq!(
+            parse_message("The Axeman off"),
+            ("The Axeman".to_owned(), None, MessageArg::Clear)
+        );
+        assert_eq!(
+            parse_message("The Axeman"),
+            ("The Axeman".to_owned(), None, MessageArg::Show)
+        );
+        assert_eq!(
+            parse_message("Granty ="),
+            ("Granty".to_owned(), None, MessageArg::Show)
+        );
+    }
+
+    #[test]
+    fn mention_args() {
+        assert_eq!(
+            parse_mention("Some Name <@&42>"),
+            Some((
+                "Some Name".to_owned(),
+                None,
+                MentionArg::Role("42".to_owned())
+            ))
+        );
+        assert_eq!(
+            parse_mention("abc <#7> @everyone"),
+            Some(("abc".to_owned(), Some("7".to_owned()), MentionArg::Everyone))
+        );
+        assert_eq!(
+            parse_mention("abc here"),
+            Some(("abc".to_owned(), None, MentionArg::Here))
+        );
+        assert_eq!(
+            parse_mention("abc off"),
+            Some(("abc".to_owned(), None, MentionArg::Clear))
+        );
+        assert_eq!(parse_mention("abc Moderators"), None);
+        assert_eq!(parse_mention("abc"), None);
+    }
+
+    #[test]
+    fn channel_filter() {
+        assert_eq!(
+            split_channel("Some Name <#9>"),
+            ("Some Name".to_owned(), Some("9".to_owned()))
+        );
+        assert_eq!(split_channel("Some Name"), ("Some Name".to_owned(), None));
     }
 }

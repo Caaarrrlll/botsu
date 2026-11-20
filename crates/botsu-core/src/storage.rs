@@ -92,6 +92,9 @@ const MIGRATIONS: &[&str] = &[
         value    TEXT NOT NULL,
         PRIMARY KEY (platform, guild_id, key)
     );",
+    // 5: custom alert text and a role (or @everyone/@here) to mention, per subscription
+    "ALTER TABLE subscriptions ADD COLUMN message TEXT;  -- NULL = the default text
+    ALTER TABLE subscriptions ADD COLUMN mention TEXT;  -- role ID | 'everyone' | 'here' | NULL",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +141,10 @@ pub struct Subscription {
     pub include_shorts: bool,
     /// User ID that added it (may remove it and toggle its Shorts).
     pub created_by: String,
+    /// Custom alert text with `{name}`, `{title}`, `{url}`, `{game}`, `{event}`; `None` = default.
+    pub message: Option<String>,
+    /// Role ID, `everyone` or `here`, mentioned at the start of each alert.
+    pub mention: Option<String>,
 }
 
 /// A scheduled YouTube stream or premiere, checked every poll until it goes live.
@@ -341,7 +348,7 @@ impl Store {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT id, kind, source_id, source_name, source_key, platform, guild_id, channel_id,
-                    include_shorts, created_by
+                    include_shorts, created_by, message, mention
              FROM subscriptions {filter}"
         ))?;
         let rows = stmt.query_map(args, |r| {
@@ -366,6 +373,8 @@ impl Store {
                 channel_id: r.get(7)?,
                 include_shorts: r.get::<_, i64>(8)? != 0,
                 created_by: r.get(9)?,
+                message: r.get(10)?,
+                mention: r.get(11)?,
             }))
         })?;
         rows.filter_map(|r| r.transpose()).collect()
@@ -380,6 +389,31 @@ impl Store {
                 "UPDATE subscriptions SET include_shorts = ?1 WHERE id = ?2",
                 params![on as i64, id],
             )?;
+        }
+        Ok(n)
+    }
+
+    /// Sets (or with `None` clears) the custom alert text. Returns how many changed.
+    pub fn set_alert_message(&self, ids: &[i64], message: Option<&str>) -> DbResult<usize> {
+        self.update_subscriptions("message", ids, message)
+    }
+
+    /// Sets (or with `None` clears) the mention. Returns how many changed.
+    pub fn set_alert_mention(&self, ids: &[i64], mention: Option<&str>) -> DbResult<usize> {
+        self.update_subscriptions("mention", ids, mention)
+    }
+
+    fn update_subscriptions(
+        &self,
+        column: &'static str,
+        ids: &[i64],
+        value: Option<&str>,
+    ) -> DbResult<usize> {
+        let conn = self.conn();
+        let sql = format!("UPDATE subscriptions SET {column} = ?1 WHERE id = ?2");
+        let mut n = 0;
+        for id in ids {
+            n += conn.execute(&sql, params![value, id])?;
         }
         Ok(n)
     }
@@ -848,6 +882,27 @@ mod tests {
             .all_subscriptions(AlertKind::YouTube)
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn alert_message_and_mention() {
+        let store = Store::open_in_memory().unwrap();
+        store.add_subscription(&sub("UC1", "c1")).unwrap();
+        let get = || {
+            store
+                .all_subscriptions(AlertKind::YouTube)
+                .unwrap()
+                .remove(0)
+        };
+        let id = get().id;
+        assert_eq!((get().message, get().mention), (None, None));
+        assert_eq!(store.set_alert_message(&[id], Some("{name}!")).unwrap(), 1);
+        assert_eq!(store.set_alert_mention(&[id], Some("everyone")).unwrap(), 1);
+        assert_eq!(get().message.as_deref(), Some("{name}!"));
+        assert_eq!(get().mention.as_deref(), Some("everyone"));
+        store.set_alert_message(&[id], None).unwrap();
+        store.set_alert_mention(&[id], None).unwrap();
+        assert_eq!((get().message, get().mention), (None, None));
     }
 
     #[test]
