@@ -39,6 +39,8 @@ pub struct Author {
 
 /// The Administrator permission bit. Discord and Fluxer use the same permission bit layout.
 pub const ADMINISTRATOR: u64 = 1 << 3;
+/// Manage Roles permission bit (Discord layout, also used by Fluxer).
+pub const MANAGE_ROLES: u64 = 1 << 28;
 
 /// A server role.
 #[derive(Debug, Clone)]

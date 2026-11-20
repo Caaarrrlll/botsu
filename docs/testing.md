@@ -231,7 +231,7 @@ Each level can do everything the ones below it can. `!help` lists only what you 
 !mod cleanup messages <n>          ← mods: the last n messages (up to 1000)
 !mod cleanup user <@user> <n>      ← that user's last n messages
 !mod cleanup bots <n>              ← bot messages and !commands
-!admin addrole <@user> <role>        ← admins (role by mention, ID or name)
+!admin addrole <@user> <role>        ← admins (role by mention, ID or name; `<@role> <@user>` works too)
 !admin removerole <@user> <role>
 !admin announce <#channel> <text>    ← admins
 ```
@@ -248,7 +248,8 @@ for the bots already in your servers, add them to the bot's role.
 | `!set modrole add <role>`, `!set roles` shows it; a member with that role can `!mod cleanup` | | |
 | `!mod cleanup messages 5` deletes 5 messages plus the command; the confirmation vanishes after 5 s | | |
 | `!mod cleanup user @someone 3`, `!mod cleanup bots 10` only delete theirs | | |
-| `!admin addrole @someone <role>` / `!admin removerole` work; a role above the bot's gives a clear error | | |
+| `!admin addrole @someone <role>` / `!admin removerole` work; a role above the bot's gives a clear error | refused ✅ 2026-11-20 (bot role too low) | refused ✅ 2026-11-20 (bot role too low) |
+| After moving the bot's role above the test role: `addrole` / `removerole` work; the error now names which role to move | | |
 | `!admin announce #channel hello` posts there; a channel ID from another server is refused | | |
 
 Fluxer's bulk-delete limits and role API are untested; note anything odd.

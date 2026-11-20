@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::adapter::{ChatAdapter, RoleInfo, ADMINISTRATOR};
+use crate::adapter::{ChatAdapter, RoleInfo, ADMINISTRATOR, MANAGE_ROLES};
 use crate::alerts::parse_channel;
 use crate::command::{Command, CommandContext, Group};
 use crate::error::{Error, Result};
@@ -76,8 +76,8 @@ impl SetCommand {
              `{p}set modrole add <role>` / `{p}set modrole remove <role>`\n\
              `{p}set roles`: show who counts as admin and mod here\n\
              `{p}set modlog <#channel>` / `{p}set modlog off`: where moderation cases are posted
-             `{p}set muterole <role>` / `{p}set muterole off`: the role `mute` gives (set its              channel permissions yourself)
-             `{p}set moddm on|off`: DM members when they're warned, kicked, banned, timed out or              muted (off by default)"
+             `{p}set muterole <role>` / `{p}set muterole off`: the role `mute` gives (set its channel permissions yourself)
+             `{p}set moddm on|off`: DM members when they're warned, kicked, banned, timed out or muted (off by default)"
         )
     }
 
@@ -87,7 +87,7 @@ impl SetCommand {
             match self.store.guild_setting(platform, guild, MUTE_ROLE_KEY)? {
                 Some(r) => format!("The mute role is <@&{r}>."),
                 None => format!(
-                    "No mute role is set, so `{p}mute` is a timeout. `{p}set muterole <role>`                      sets one.",
+                    "No mute role is set, so `{p}mute` is a timeout. `{p}set muterole <role>` sets one.",
                     p = ctx.prefix
                 ),
             }
@@ -110,7 +110,7 @@ impl SetCommand {
             self.store
                 .set_guild_setting(platform, guild, MUTE_ROLE_KEY, Some(&role.id))?;
             format!(
-                "`mute` now gives **{}**. Make sure it denies Send Messages (and Speak) in the                  channels, and that my highest role is above it.",
+                "`mute` now gives **{}**. Make sure it denies Send Messages (and Speak) in the channels, and that my highest role is above it.",
                 role.name
             )
         };
@@ -124,7 +124,7 @@ impl SetCommand {
             "on" => {
                 self.store
                     .set_guild_setting(platform, guild, MOD_DM_KEY, Some("on"))?;
-                "Members will get a DM saying what happened and why. (Some have DMs closed; the                  action still goes ahead.)"
+                "Members will get a DM saying what happened and why. (Some have DMs closed; the action still goes ahead.)"
             }
             "off" => {
                 self.store
@@ -472,10 +472,7 @@ impl Command for RoleCommand {
 
     async fn run(&self, ctx: CommandContext) -> Result<()> {
         let guild = guild(&ctx)?;
-        let (who, role_arg) = ctx
-            .args
-            .split_once(char::is_whitespace)
-            .unwrap_or((ctx.args.as_str(), ""));
+        let (who, role_arg) = split_user_role(&ctx.args);
         let user = parse_user(who).ok_or_else(|| {
             Error::Usage(format!(
                 "Usage: `{}{} <@user> <role>`",
@@ -496,17 +493,69 @@ impl Command for RoleCommand {
         } else {
             ctx.chat.remove_role(&guild, &user, &role.id).await
         };
-        result.map_err(|e| {
+        if let Err(e) = result {
             tracing::info!(error = %e, role = %role.name, "role change refused");
-            Error::Usage(format!(
-                "I couldn't change **{}**. I need Manage Roles, and my own role must be above it.",
+            let why = role_refusal(&*ctx.chat, &guild, &role).await;
+            return Err(Error::Usage(format!(
+                "I couldn't change **{}**. {why}",
                 role.name
-            ))
-        })?;
+            )));
+        }
         let done = if self.add { "Added" } else { "Removed" };
         ctx.reply(&format!("{done} the **{}** role.", role.name))
             .await?;
         Ok(())
+    }
+}
+
+/// `"<@user> <role…>"`, or the other way round when the role comes first as a mention
+/// (`<@&id> <@user>`): returns `(user, role)`.
+fn split_user_role(args: &str) -> (&str, &str) {
+    let args = args.trim();
+    if args.starts_with("<@&") {
+        if let Some((role, user)) = args.rsplit_once(char::is_whitespace) {
+            return (user, role.trim());
+        }
+    }
+    let (user, role) = args.split_once(char::is_whitespace).unwrap_or((args, ""));
+    (user, role.trim())
+}
+
+/// Why the platform probably refused a role change, with the fix: the bot's highest role isn't
+/// above `role`, or none of the bot's roles has Manage Roles. Falls back to both hints.
+async fn role_refusal(chat: &dyn ChatAdapter, guild: &str, role: &RoleInfo) -> String {
+    let generic =
+        "I need Manage Roles, and my own highest role must be above it in the server's role list."
+            .to_owned();
+    let (Ok(bot), Ok(roles)) = (chat.bot_user_id().await, chat.roles(guild).await) else {
+        return generic;
+    };
+    let Ok(mine) = chat.member_roles(guild, &bot).await else {
+        return generic;
+    };
+    let my_roles: Vec<&RoleInfo> = roles
+        .iter()
+        .filter(|r| mine.contains(&r.id) || r.id == guild)
+        .collect();
+    let perms = my_roles.iter().fold(0, |p, r| p | r.permissions);
+    let top = my_roles
+        .iter()
+        .filter(|r| r.id != guild)
+        .max_by_key(|r| r.position);
+    match top {
+        Some(top) if top.position <= role.position => format!(
+            "My highest role, **{}**, is not above **{}**. Move **{}** above it in the server's role settings.",
+            top.name, role.name, top.name
+        ),
+        None => format!(
+            "I have no role of my own above **{}**. Give me a role with Manage Roles that's above it.",
+            role.name
+        ),
+        Some(top) if perms & (MANAGE_ROLES | ADMINISTRATOR) == 0 => format!(
+            "None of my roles has the **Manage Roles** permission. Turn it on for **{}**.",
+            top.name
+        ),
+        Some(_) => generic,
     }
 }
 
@@ -552,7 +601,19 @@ impl Command for AnnounceCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_user;
+
+    #[test]
+    fn user_and_role_in_either_order() {
+        assert_eq!(
+            split_user_role("<@1> Testing Role"),
+            ("<@1>", "Testing Role")
+        );
+        assert_eq!(split_user_role("<@&2> <@1>"), ("<@1>", "<@&2>"));
+        assert_eq!(split_user_role("<@1> <@&2>"), ("<@1>", "<@&2>"));
+        assert_eq!(split_user_role("<@1>"), ("<@1>", ""));
+    }
+
+    use super::{parse_user, split_user_role};
 
     #[test]
     fn user_arguments() {

@@ -166,7 +166,7 @@ async fn set_message(
             }
             if has_command_line(&text, &ctx.prefix) {
                 return Err(Error::Usage(
-                    "That text has another command on a later line. I run one command per                      message: send each command on its own."
+                    "That text has another command on a later line. I run one command per message: send each command on its own."
                         .into(),
                 ));
             }
