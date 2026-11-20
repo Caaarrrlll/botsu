@@ -1,14 +1,27 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.100-bookworm AS build
+FROM rust:1.100-bookworm AS chef
 # Build deps: livekit/libwebrtc (pulled in by fluxer-rust) and libopus (songbird, Discord voice).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         pkg-config libglib2.0-dev libva-dev libopus-dev \
     && rm -rf /var/lib/apt/lists/*
+RUN cargo install cargo-chef --locked --version 0.1.78
 WORKDIR /src
+
+# cargo-chef splits the build so the dependencies (most of the ~10-15 min, including the
+# libwebrtc download) sit in their own layer. CI's layer cache keeps it, so a change to botsu's
+# own code only rebuilds botsu. The layer is rebuilt when Cargo.toml/Cargo.lock or vendor/ change.
+FROM chef AS planner
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
-    cargo build --release -p botsu && cp target/release/botsu /botsu
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS build
+COPY --from=planner /src/recipe.json recipe.json
+# The recipe only covers workspace members; the vendored fluxer-rust ([patch.crates-io]) must be
+# there for cargo to resolve the workspace.
+COPY vendor vendor
+RUN cargo chef cook --release -p botsu --recipe-path recipe.json
+COPY . .
+RUN cargo build --release -p botsu && cp target/release/botsu /botsu
 
 FROM debian:bookworm-slim
 # Runtime: libwebrtc libs and libopus. yt-dlp isn't in the image: botsu downloads it into

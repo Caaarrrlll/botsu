@@ -103,8 +103,8 @@ Get the project building and publishing itself before the bigger features land.
 - [x] **Release job** in the same workflow, after the checks pass, only on `master` and `v*` tags: buildx + metadata + build-push with the GitHub Actions layer cache. Tags: `latest` and `sha-<short>` on `master`; `X.Y.Z` and `X.Y` on tags `vX.Y.Z`.
 - [x] `linux/amd64`. `linux/arm64` only if phase 0 finds a prebuilt libwebrtc, built on a native arm64 runner (emulated webrtc builds would be very slow).
 - [x] OCI labels (source, revision, version) via `docker/metadata-action`, so Docker Hub and Unraid link back to the repo.
-- [ ] Sync the README to the Docker Hub description (needs a token with admin scope; optional).
-- [ ] Faster image builds: the Dockerfile's cargo cache mount isn't kept between CI runs, so each image build compiles from scratch (~10–15 min). Fix with `cargo-chef` layers if it gets annoying.
+- [x] Docker Hub description: updated by hand from README.md when it matters (decided 2026-11-20). Automating it would need a second token with Read, Write & Delete scope (Docker Hub refuses description edits from Read & Write tokens); not worth it.
+- [x] Faster image builds: `cargo-chef` stages in the Dockerfile put the dependency build (and the libwebrtc download) in its own layer, which the GitHub Actions layer cache keeps; only Cargo.toml/Cargo.lock/`vendor/` changes rebuild it. Pull requests build the image without publishing it, so Dockerfile changes are tested before `master`.
 
 ### Running it anywhere
 - [x] `deploy/docker-compose.yml`: image from Docker Hub, `./data` volume, PUID/PGID, optional `env_file`, `restart: unless-stopped`.
@@ -179,6 +179,7 @@ Runbook: [cutover.md](cutover.md).
 - [ ] Move Tube/streams subscriptions and mod settings over; check nothing is posted twice during the overlap.
 - [ ] Stop Red, then remove the Red container and Lavalink. Record memory before and after.
 - [ ] Update the server notes (template snapshot, env file location, update procedure).
+- [ ] Optional: export/import a server's settings (subscriptions, admin/mod roles, mod log, volume; no user data) between any two servers, Discord or Fluxer. Plan: [settings-migration.md](settings-migration.md).
 
 **Done when:** Red is gone and nobody noticed.
 
