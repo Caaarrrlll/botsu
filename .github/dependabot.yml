@@ -17,6 +17,11 @@ updates:
       - dependency-name: "livekit*"
       - dependency-name: "webrtc-sys*"
       - dependency-name: libwebrtc
+      # Must stay on songbird's symphonia version: botsu depends on it only to turn on the `pcm`
+      # feature in songbird's copy. A different version builds a second copy and Discord tracks
+      # fail at runtime (CI can't tell). Bump together with songbird.
+      - dependency-name: symphonia
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: github-actions
     directory: /
