@@ -218,8 +218,13 @@ used for detection because polling every channel through the Data API would exce
 
 **Rules that prevent spam:**
 
-- **On subscribe or import:** everything currently in the feed (or the live stream) is marked
-  seen, so only new uploads or streams are posted.
+- **On subscribe or import of a new source:** everything currently in the feed (or the live
+  stream) is marked seen, so only new uploads or streams are posted. If any channel (on any
+  platform) already follows the source, nothing is marked: the poller owns its record, and an
+  item it hasn't announced yet goes to every channel, the new one included. (Marking it would
+  have swallowed it for the existing channels.)
+- **Markdown:** names, titles and games are escaped (`escape_md`), so `Snoozaya_` or `*NEW*`
+  can't turn the rest of a message italic or bold. Links are left as they are.
 - **YouTube:** videos published more than 7 days ago are never posted, even if unseen (for example
   a video made public long after upload).
 - **Twitch:** a new stream starting within 15 minutes of the previous one last being seen live

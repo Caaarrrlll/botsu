@@ -329,18 +329,19 @@ impl Alert {
 
     /// The built-in text.
     pub(crate) fn default_text(&self) -> String {
-        let (name, event) = (&self.name, self.event.phrase());
+        let (name, event) = (escape_md(&self.name), self.event.phrase());
+        let title = escape_md(&self.title);
         if self.event == Event::TwitchLive {
             let mut text = format!("**{name}** {event}");
             if !self.game.is_empty() {
-                text.push_str(&format!(" playing **{}**", self.game));
+                text.push_str(&format!(" playing **{}**", escape_md(&self.game)));
             }
-            if !self.title.is_empty() {
-                text.push_str(&format!(": {}", self.title));
+            if !title.is_empty() {
+                text.push_str(&format!(": {title}"));
             }
             return format!("{text}\n{}", self.url);
         }
-        format!("**{name}** {event}: **{}**\n{}", self.title, self.url)
+        format!("**{name}** {event}: **{title}**\n{}", self.url)
     }
 
     /// The text for one subscription: its template with the placeholders filled in (the link
@@ -350,9 +351,9 @@ impl Alert {
         let body = match message {
             Some(t) => {
                 let filled = t
-                    .replace("{name}", &self.name)
-                    .replace("{title}", &self.title)
-                    .replace("{game}", &self.game)
+                    .replace("{name}", &escape_md(&self.name))
+                    .replace("{title}", &escape_md(&self.title))
+                    .replace("{game}", &escape_md(&self.game))
                     .replace("{event}", self.event.phrase());
                 if filled.contains("{url}") {
                     filled.replace("{url}", &self.url)
@@ -367,6 +368,19 @@ impl Alert {
             None => body,
         }
     }
+}
+
+/// Escapes Markdown in names and titles so `Snoozaya_` or `*NEW*` show as typed instead of
+/// turning the rest of the message italic or bold (same rules on Discord and Fluxer).
+pub fn escape_md(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | '*' | '_' | '~' | '`' | '|') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// A stored mention (role ID, `user:<ID>`, `everyone`, `here`) as message text.
@@ -476,6 +490,18 @@ mod tests {
     fn jitter_stays_within_ten_percent() {
         let d = jitter(Duration::from_secs(100));
         assert!(d >= Duration::from_secs(90) && d <= Duration::from_secs(110));
+    }
+
+    #[test]
+    fn markdown_escaped() {
+        assert_eq!(escape_md("Snoozaya_"), "Snoozaya\\_");
+        assert_eq!(escape_md("*NEW* a|b"), "\\*NEW\\* a\\|b");
+        let a = Alert::new(Event::Upload, "a_b", "x*y", "https://y/a_b");
+        // The link stays as it is.
+        assert_eq!(
+            a.text_for(None, None),
+            "**a\\_b** posted a new video: **x\\*y**\nhttps://y/a_b"
+        );
     }
 
     #[test]
