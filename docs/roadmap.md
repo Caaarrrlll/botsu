@@ -83,6 +83,8 @@ The easiest cross-platform feature: "post a message in channel X". Replaces Red'
 - [x] `tube import` / `twitch import`: create subscriptions from a pasted list (Red's `tube list` format, Twitch names with `and`/commas, `youtube:`/`twitch:` sections).
 - [x] Red parity: custom alert text (`tube|twitch message`, placeholders) and a role / @everyone / @here mention per subscription (`tube|twitch mention`), migration 5. Live test in testing.md section 5.
 - [x] `tube|twitch remove <name> #channel` removes a source from one channel only.
+- [x] Alert embeds: botsu posts its own embed with a large image (YouTube thumbnail, Twitch live frame), `set embeds on|off` per server (on by default), plain-text fallback. Live test in testing.md section 5.
+- [ ] Parked: Twitch EventSub over WebSocket (live alerts within seconds; needs a user token). Same status as YouTube cookies.
 - [ ] Optional: record the Fluxer instance on subscriptions, if the bot ever needs to move between instances with the same database (see architecture.md, `subscriptions`).
 
 **Done when:** new uploads and live streams are posted once on Discord and Fluxer, and a restart doesn't repost anything.
@@ -109,7 +111,7 @@ Get the project building and publishing itself before the bigger features land.
 ### Running it anywhere
 - [x] `deploy/docker-compose.yml`: image from Docker Hub, `./data` volume, PUID/PGID, optional `env_file`, `restart: unless-stopped`.
 - [x] `deploy/unraid/my-botsu.xml`: pulls `caaarrrlll/botsu:latest`; data folder, settings as fields (tokens masked) or in the auto-created `botsu.env`, PUID/PGID. Icon is a placeholder (`assets/monkasS.png`).
-- [ ] User: migrate the live server to the current template (`deploy/unraid/my-botsu.xml`, up to date 2026-11-20): new overview and Bot owners text, new fields "Invite as admin" (`BOTSU_INVITE_ADMIN`) and, under advanced, "yt-dlp path" (`BOTSU_YTDLP`). Unraid saves field values in the same file, so note them before replacing it.
+- [x] Migrated (2026-11-20): migrate the live server to the current template (`deploy/unraid/my-botsu.xml`, up to date 2026-11-20): new overview and Bot owners text, new fields "Invite as admin" (`BOTSU_INVITE_ADMIN`) and, under advanced, "yt-dlp path" (`BOTSU_YTDLP`). Unraid saves field values in the same file, so note them before replacing it.
 - [x] `docs/install-docker.md`: `docker run` and Compose for anyone, tags, settings, updating and rolling back.
 - [x] **Invite links in the startup log**, one per connected platform: Discord from `ready.application.id`, Fluxer from the bot's user ID plus the discovered web app address. Permissions in `botsu_core::INVITE_PERMISSIONS` (now including Embed Links for alert previews); `BOTSU_INVITE_ADMIN=true` requests Administrator instead (off by default). `*_APPLICATION_ID` in `.env.example` are kept as optional, unused reference values.
 - [x] `docs/install-linux.md` + `deploy/systemd/botsu.service`: build from source, `/etc/botsu/botsu.env` (600), `DynamicUser` + `StateDirectory` (`/var/lib/botsu`), hardened sandbox (`systemd-analyze security`: 3.2 OK). Phase 6 adds ffmpeg and yt-dlp.

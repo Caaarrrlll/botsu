@@ -12,7 +12,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::adapter::{ChatAdapter, RoleInfo, ADMINISTRATOR, MANAGE_ROLES};
-use crate::alerts::{escape_md, parse_channel};
+use crate::alerts::{escape_md, parse_channel, EMBEDS_KEY};
 use crate::command::{Command, CommandContext, Group};
 use crate::error::{Error, Result};
 use crate::moderation::{MODLOG_KEY, MOD_DM_KEY, MUTE_ROLE_KEY};
@@ -77,7 +77,8 @@ impl SetCommand {
              `{p}set roles`: show who counts as admin and mod here\n\
              `{p}set modlog <#channel>` / `{p}set modlog off`: where moderation cases are posted
              `{p}set muterole <role>` / `{p}set muterole off`: the role `mute` gives (set its channel permissions yourself)
-             `{p}set moddm on|off`: DM members when they're warned, kicked, banned, timed out or muted (off by default)"
+             `{p}set moddm on|off`: DM members when they're warned, kicked, banned, timed out or muted (off by default)\n\
+             `{p}set embeds on|off`: alerts as botsu's embed with a large image (on), or plain text with the app's own link preview (off)"
         )
     }
 
@@ -115,6 +116,38 @@ impl SetCommand {
             )
         };
         ctx.reply(&reply).await?;
+        Ok(())
+    }
+
+    async fn embeds(&self, ctx: &CommandContext, guild: &str, arg: &str) -> Result<()> {
+        let platform = ctx.message.platform;
+        let reply = match arg.to_lowercase().as_str() {
+            "on" => {
+                self.store
+                    .set_guild_setting(platform, guild, EMBEDS_KEY, None)?;
+                "Alerts will be posted as an embed with a large image. (I need Embed Links; \
+                 without it they fall back to plain text.)"
+            }
+            "off" => {
+                self.store
+                    .set_guild_setting(platform, guild, EMBEDS_KEY, Some("off"))?;
+                "Alerts will be posted as plain text with the app's own link preview."
+            }
+            "" => {
+                if self
+                    .store
+                    .guild_setting(platform, guild, EMBEDS_KEY)?
+                    .as_deref()
+                    == Some("off")
+                {
+                    "Alert embeds are off: plain text with the app's link preview."
+                } else {
+                    "Alert embeds are on (the default)."
+                }
+            }
+            _ => return Err(Error::Usage(Self::usage(&ctx.prefix))),
+        };
+        ctx.reply(reply).await?;
         Ok(())
     }
 
@@ -203,12 +236,12 @@ impl Command for SetCommand {
             let arg = ctx.args.trim_start()["modlog".len()..].to_owned();
             return self.modlog(&ctx, &guild, &arg).await;
         }
-        if what == "muterole" || what == "moddm" {
+        if matches!(what.as_str(), "muterole" | "moddm" | "embeds") {
             let arg = ctx.args.trim_start()[what.len()..].trim().to_owned();
-            return if what == "muterole" {
-                self.muterole(&ctx, &guild, &arg).await
-            } else {
-                self.moddm(&ctx, &guild, &arg).await
+            return match what.as_str() {
+                "muterole" => self.muterole(&ctx, &guild, &arg).await,
+                "moddm" => self.moddm(&ctx, &guild, &arg).await,
+                _ => self.embeds(&ctx, &guild, &arg).await,
             };
         }
         if what == "roles" {

@@ -203,6 +203,8 @@ is skipped and listed. Nothing already published or already live is posted.
 | `!tube message <name> = …` changes the next alert's text; `!tube list` shows "custom text"; `off` restores it | | set and listed ✅ 2026-11-20; next alert pending |
 | `!tube mention <name> @role` pings the role on the next alert; a non-mod is refused; `everyone` needs admin | | set and listed ✅ 2026-11-20; next alert pending |
 | Same source in two channels: `!tube remove <name> #one` removes only that one | | |
+| Next alert is botsu's embed: large image, title links to the video/stream, no second preview; Twitch image is the live frame | | |
+| `!set embeds off`: the next alert is plain text with the app's preview again; `on` brings the embed back | | |
 | A streamer going live is posted once (within ~2 min), not again on restart | ✅ 2026-11-20 (posted; restart while live not checked) | ✅ 2026-11-20 (posted; restart while live not checked) |
 | `!twitch list` with names containing `_` (e.g. `Streamer_`) shows them as typed, no stray italics | | |
 
@@ -273,6 +275,7 @@ Fluxer's bulk-delete limits and role API are untested; note anything odd.
 !mod unmute <@user> [reason]
 !set muterole <role> | off     ← server owner; give the role "deny Send Messages" yourself
 !set moddm on | off            ← server owner; DM members about actions against them
+!set embeds on | off           ← server owner; alerts as botsu's embed (on) or plain text
 !mod case <n>   !mod cases <@user>   !mod reason <n> <text>   !mod bans
 ```
 

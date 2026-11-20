@@ -36,6 +36,9 @@ pub struct Stream {
     pub game_name: String,
     #[serde(default)]
     pub title: String,
+    /// Live frame, with `{width}` and `{height}` placeholders.
+    #[serde(default)]
+    pub thumbnail_url: String,
 }
 
 #[derive(Deserialize)]

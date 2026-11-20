@@ -53,6 +53,19 @@ pub struct RoleInfo {
     pub position: i64,
 }
 
+/// A rich embed (alerts): a linked title, an author line, a large image and a colour bar.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Embed {
+    pub title: String,
+    pub url: String,
+    pub author: Option<String>,
+    pub description: Option<String>,
+    /// Shown large, under the text.
+    pub image: Option<String>,
+    pub color: Option<u32>,
+    pub footer: Option<String>,
+}
+
 /// A message from a channel's history (for cleanup).
 #[derive(Debug, Clone)]
 pub struct HistoryMessage {
@@ -161,6 +174,15 @@ pub trait ChatAdapter: Send + Sync {
         Err(Error::Unsupported {
             platform: self.platform(),
             op: "recent_messages",
+        })
+    }
+
+    /// Sends `content` (may be empty) with one embed and returns the message ID.
+    async fn send_embed(&self, channel_id: &str, content: &str, embed: &Embed) -> Result<String> {
+        let _ = (channel_id, content, embed);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "embeds",
         })
     }
 

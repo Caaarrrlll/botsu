@@ -51,7 +51,8 @@ pub fn invite_permissions(admin: bool) -> u64 {
 }
 
 pub use adapter::{
-    Author, BanInfo, Capabilities, ChatAdapter, HistoryMessage, IncomingMessage, Platform, RoleInfo,
+    Author, BanInfo, Capabilities, ChatAdapter, Embed, HistoryMessage, IncomingMessage, Platform,
+    RoleInfo,
 };
 pub use bot::Bot;
 pub use command::{Command, CommandContext};

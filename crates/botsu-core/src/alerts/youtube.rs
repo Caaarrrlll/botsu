@@ -43,6 +43,16 @@ pub fn is_channel_id(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
+/// The largest thumbnail YouTube has for a video: `maxresdefault` (1280×720) when it exists
+/// (one HEAD request), otherwise `hqdefault` (480×360, always there).
+pub async fn thumbnail(http: &reqwest::Client, video_id: &str) -> String {
+    let max = format!("https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg");
+    match http.head(&max).send().await {
+        Ok(r) if r.status().is_success() => max,
+        _ => format!("https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"),
+    }
+}
+
 pub async fn fetch_feed(http: &reqwest::Client, channel_id: &str) -> Result<Feed, String> {
     let resp = http
         .get(feed_url(channel_id))

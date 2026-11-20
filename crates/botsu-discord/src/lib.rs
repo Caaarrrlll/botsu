@@ -12,8 +12,9 @@ use botsu_core::{
     Platform, RoleInfo,
 };
 use serenity::all::{
-    ChannelId, Client, Context, EditMember, EventHandler, GatewayIntents, GetMessages, Guild,
-    GuildId, Http, Message, MessageId, Ready, RoleId, Timestamp, UserId, VoiceState,
+    ChannelId, Client, Context, CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, CreateMessage,
+    EditMember, EventHandler, GatewayIntents, GetMessages, Guild, GuildId, Http, Message,
+    MessageId, Ready, RoleId, Timestamp, UserId, VoiceState,
 };
 use serenity::async_trait;
 use songbird::input::core::io::ReadOnlySource;
@@ -73,6 +74,39 @@ impl ChatAdapter for DiscordChat {
             .await
             .map_err(err)?;
         Ok(msg.id.to_string())
+    }
+
+    async fn send_embed(
+        &self,
+        channel_id: &str,
+        content: &str,
+        embed: &botsu_core::Embed,
+    ) -> botsu_core::Result<String> {
+        let mut e = CreateEmbed::new().title(&embed.title).url(&embed.url);
+        if let Some(a) = &embed.author {
+            e = e.author(CreateEmbedAuthor::new(a));
+        }
+        if let Some(d) = &embed.description {
+            e = e.description(d);
+        }
+        if let Some(i) = &embed.image {
+            e = e.image(i);
+        }
+        if let Some(c) = embed.color {
+            e = e.colour(c);
+        }
+        if let Some(f) = &embed.footer {
+            e = e.footer(CreateEmbedFooter::new(f));
+        }
+        let mut msg = CreateMessage::new().embed(e);
+        if !content.is_empty() {
+            msg = msg.content(content);
+        }
+        let sent = ChannelId::new(snowflake(channel_id)?)
+            .send_message(&self.http, msg)
+            .await
+            .map_err(err)?;
+        Ok(sent.id.to_string())
     }
 
     async fn delete_message(&self, channel_id: &str, message_id: &str) -> botsu_core::Result<()> {

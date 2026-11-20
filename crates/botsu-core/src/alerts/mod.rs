@@ -17,6 +17,7 @@ use time::OffsetDateTime;
 
 pub use commands::{TubeCommand, TwitchCommand};
 
+use crate::adapter::Embed;
 use crate::bot::Bot;
 use crate::storage::{now, AlertKind, PendingItem, Store, Subscription};
 
@@ -195,8 +196,9 @@ async fn poll_youtube(
                 subs.iter().filter(|s| s.include_shorts).cloned().collect();
             if !wanted.is_empty() {
                 tracing::info!(channel = %ch, video = %v.id, "new YouTube Short");
-                let alert = Alert::new(Event::Short, ch, &v.title, &v.url);
-                deliver(bot, &wanted, &alert).await;
+                let alert = Alert::new(Event::Short, ch, &v.title, &v.url)
+                    .image(youtube::thumbnail(http, &v.id).await);
+                deliver(bot, store, &wanted, &alert).await;
             }
             continue;
         }
@@ -211,13 +213,15 @@ async fn poll_youtube(
         match state {
             Some(youtube::LiveState::None) => {
                 tracing::info!(channel = %ch, video = %v.id, "new YouTube upload");
-                let alert = Alert::new(Event::Upload, ch, &v.title, &v.url);
-                deliver(bot, subs, &alert).await;
+                let alert = Alert::new(Event::Upload, ch, &v.title, &v.url)
+                    .image(youtube::thumbnail(http, &v.id).await);
+                deliver(bot, store, subs, &alert).await;
             }
             Some(youtube::LiveState::Live) => {
                 tracing::info!(channel = %ch, video = %v.id, "YouTube stream is live");
-                let alert = Alert::new(Event::YouTubeLive, ch, &v.title, &v.url);
-                deliver(bot, subs, &alert).await;
+                let alert = Alert::new(Event::YouTubeLive, ch, &v.title, &v.url)
+                    .image(youtube::thumbnail(http, &v.id).await);
+                deliver(bot, store, subs, &alert).await;
             }
             Some(youtube::LiveState::Upcoming) | None => {
                 tracing::info!(channel = %ch, video = %v.id, "YouTube item waiting (scheduled, or API unavailable)");
@@ -260,12 +264,9 @@ async fn poll_youtube(
             .map_err(db)?;
         if let (Some(event), Some(subs)) = (event, subs) {
             tracing::info!(channel = %p.source_name, video = %p.item_id, "waiting YouTube item posted");
-            deliver(
-                bot,
-                subs,
-                &Alert::new(event, &p.source_name, &p.title, &p.url),
-            )
-            .await;
+            let alert = Alert::new(event, &p.source_name, &p.title, &p.url)
+                .image(youtube::thumbnail(http, &p.item_id).await);
+            deliver(bot, store, subs, &alert).await;
         }
     }
     Ok(())
@@ -301,7 +302,13 @@ pub(crate) struct Alert {
     pub url: String,
     /// Twitch category; empty for YouTube.
     pub game: String,
+    /// Large image for the embed (YouTube thumbnail, Twitch live frame).
+    pub image: Option<String>,
 }
+
+/// `guild_settings` key: `off` posts alerts as plain text with the app's own link preview
+/// instead of botsu's embed (on by default).
+pub const EMBEDS_KEY: &str = "alert_embeds";
 
 /// Placeholders a custom alert text may use (`tube message`, `twitch message`).
 pub const PLACEHOLDERS: &str = "`{name}`, `{title}`, `{url}`, `{game}` (Twitch), `{event}`";
@@ -314,7 +321,13 @@ impl Alert {
             title: title.to_owned(),
             url: url.to_owned(),
             game: String::new(),
+            image: None,
         }
+    }
+
+    pub(crate) fn image(mut self, url: String) -> Self {
+        self.image = Some(url);
+        self
     }
 
     pub(crate) fn twitch(s: &twitch::Stream) -> Self {
@@ -324,6 +337,36 @@ impl Alert {
             title: s.title.clone(),
             url: format!("https://twitch.tv/{}", s.user_login),
             game: s.game_name.clone(),
+            // Twitch reuses one URL per channel; the query keeps apps from showing an old frame.
+            image: (!s.thumbnail_url.is_empty()).then(|| {
+                format!(
+                    "{}?t={}",
+                    s.thumbnail_url
+                        .replace("{width}", "1280")
+                        .replace("{height}", "720"),
+                    now()
+                )
+            }),
+        }
+    }
+
+    /// The embed: linked title, channel as author, the image large, the platform's colour.
+    pub(crate) fn embed(&self) -> Embed {
+        let twitch = self.event == Event::TwitchLive;
+        let title = if self.title.is_empty() {
+            format!("{} on Twitch", self.name)
+        } else {
+            self.title.clone()
+        };
+        Embed {
+            title,
+            url: self.url.clone(),
+            author: Some(self.name.clone()),
+            description: (twitch && !self.game.is_empty())
+                .then(|| format!("Playing **{}**", escape_md(&self.game))),
+            image: self.image.clone(),
+            color: Some(if twitch { 0x9146FF } else { 0xFF0000 }),
+            footer: Some(if twitch { "Twitch" } else { "YouTube" }.to_owned()),
         }
     }
 
@@ -348,6 +391,16 @@ impl Alert {
     /// is added on its own line if the template leaves it out, so the preview still shows), or
     /// the default; then the mention in front.
     pub(crate) fn text_for(&self, message: Option<&str>, mention: Option<&str>) -> String {
+        self.text(message, mention, false)
+    }
+
+    /// The text above an embed: no bare link (the app would add a second preview), so `{url}`
+    /// becomes `<url>` and nothing is appended; the default is just "**name** event".
+    pub(crate) fn embed_text_for(&self, message: Option<&str>, mention: Option<&str>) -> String {
+        self.text(message, mention, true)
+    }
+
+    fn text(&self, message: Option<&str>, mention: Option<&str>, embed: bool) -> String {
         let body = match message {
             Some(t) => {
                 let filled = t
@@ -355,12 +408,15 @@ impl Alert {
                     .replace("{title}", &escape_md(&self.title))
                     .replace("{game}", &escape_md(&self.game))
                     .replace("{event}", self.event.phrase());
-                if filled.contains("{url}") {
+                if embed {
+                    filled.replace("{url}", &format!("<{}>", self.url))
+                } else if filled.contains("{url}") {
                     filled.replace("{url}", &self.url)
                 } else {
                     format!("{filled}\n{}", self.url)
                 }
             }
+            None if embed => format!("**{}** {}", escape_md(&self.name), self.event.phrase()),
             None => self.default_text(),
         };
         match mention.map(mention_text) {
@@ -433,7 +489,7 @@ async fn poll_twitch(bot: &Bot, store: &Store, twitch: &twitch::Twitch) -> Resul
             continue;
         }
         tracing::info!(user = %stream.user_login, stream = %stream.id, "Twitch stream went live");
-        deliver(bot, subs, &Alert::twitch(&stream)).await;
+        deliver(bot, store, subs, &Alert::twitch(&stream)).await;
     }
     Ok(())
 }
@@ -442,18 +498,40 @@ pub(crate) fn live_text(s: &twitch::Stream) -> String {
     Alert::twitch(s).default_text()
 }
 
-/// Posts the alert to every subscribed channel, with each subscription's own text and mention.
-/// Failures are logged, not retried: a channel the bot can't post in shouldn't block the others
-/// or cause repeats later.
-async fn deliver(bot: &Bot, subs: &[Subscription], alert: &Alert) {
+/// Posts the alert to every subscribed channel, with each subscription's own text and mention:
+/// as an embed unless the server turned embeds off (`set embeds off`), falling back to plain
+/// text when the embed is refused (no Embed Links, or a platform without embeds). Failures are
+/// logged, not retried: a channel the bot can't post in shouldn't block the others or cause
+/// repeats later.
+async fn deliver(bot: &Bot, store: &Store, subs: &[Subscription], alert: &Alert) {
+    let embed = alert.embed();
     for sub in subs {
-        let text = alert.text_for(sub.message.as_deref(), sub.mention.as_deref());
-        let text = text.as_str();
         let Some(chat) = bot.chat(sub.platform) else {
             tracing::warn!(platform = %sub.platform, "platform not connected; alert skipped");
             continue;
         };
-        if let Err(e) = chat.send_message(&sub.channel_id, text).await {
+        let (message, mention) = (sub.message.as_deref(), sub.mention.as_deref());
+        let embeds_on = match &sub.guild_id {
+            Some(g) => !matches!(
+                store.guild_setting(sub.platform, g, EMBEDS_KEY),
+                Ok(Some(v)) if v == "off"
+            ),
+            None => true,
+        };
+        if embeds_on {
+            let text = alert.embed_text_for(message, mention);
+            match chat.send_embed(&sub.channel_id, &text, &embed).await {
+                Ok(_) => continue,
+                Err(e) => tracing::info!(
+                    platform = %sub.platform,
+                    channel = %sub.channel_id,
+                    error = %e,
+                    "alert embed refused; posting plain text"
+                ),
+            }
+        }
+        let text = alert.text_for(message, mention);
+        if let Err(e) = chat.send_message(&sub.channel_id, &text).await {
             tracing::warn!(
                 platform = %sub.platform,
                 channel = %sub.channel_id,
@@ -490,6 +568,42 @@ mod tests {
     fn jitter_stays_within_ten_percent() {
         let d = jitter(Duration::from_secs(100));
         assert!(d >= Duration::from_secs(90) && d <= Duration::from_secs(110));
+    }
+
+    #[test]
+    fn embed_texts() {
+        let a = Alert::new(Event::Upload, "Chan", "Vid", "https://y/1").image("https://i/1".into());
+        // No bare link above an embed, or the app adds its own preview too.
+        assert_eq!(
+            a.embed_text_for(None, Some("1")),
+            "<@&1> **Chan** posted a new video"
+        );
+        assert_eq!(
+            a.embed_text_for(Some("{title} {url}"), None),
+            "Vid <https://y/1>"
+        );
+        assert_eq!(a.embed_text_for(Some("hi {name}"), None), "hi Chan");
+        let e = a.embed();
+        assert_eq!((e.title.as_str(), e.url.as_str()), ("Vid", "https://y/1"));
+        assert_eq!(e.image.as_deref(), Some("https://i/1"));
+        assert_eq!(e.color, Some(0xFF0000));
+
+        let s = twitch::Stream {
+            id: "1".into(),
+            user_id: "2".into(),
+            user_login: "abc".into(),
+            user_name: "Abc".into(),
+            game_name: "Chess".into(),
+            title: String::new(),
+            thumbnail_url: "https://t/live_user_abc-{width}x{height}.jpg".into(),
+        };
+        let e = Alert::twitch(&s).embed();
+        assert_eq!(e.title, "Abc on Twitch");
+        assert_eq!(e.description.as_deref(), Some("Playing **Chess**"));
+        assert!(e
+            .image
+            .as_deref()
+            .is_some_and(|i| i.starts_with("https://t/live_user_abc-1280x720.jpg?t=")));
     }
 
     #[test]
@@ -539,6 +653,7 @@ mod tests {
             user_name: "Abc".into(),
             game_name: String::new(),
             title: "Hello".into(),
+            thumbnail_url: String::new(),
         };
         assert_eq!(
             live_text(&s),
