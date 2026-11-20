@@ -196,7 +196,7 @@ is skipped and listed. Nothing already published or already live is posted.
 | `!tube add <link> #other-channel` posts the notice in the other channel | | |
 | `!tube list` shows it; `!tube remove <name>` removes it | | |
 | `!tube import` and `!twitch import` with the old bot's list: summary shows added / skipped | | |
-| A new upload appears within ~20 min (YouTube caches the feed up to ~15 min) | ✅ 2026-11-20: twice (once 2 min after Red, once before Red) | |
+| A new upload appears within ~20 min (YouTube caches the feed up to ~15 min) | ✅ 2026-11-20: twice (once 2 min after Red, once before Red) | ✅ 2026-11-20 |
 | Restarting the bot doesn't repost anything | | |
 | `!twitch add <streamer>` says live/offline correctly | | |
 | `!tube message <name> = …` changes the next alert's text; `!tube list` shows "custom text"; `off` restores it | | |
