@@ -452,16 +452,19 @@ impl Command for CleanupCommand {
     }
 }
 
-/// `admin addrole | removerole | announce`.
-pub fn admin_group() -> Group {
+/// `admin addrole | removerole | announce | export | import`. `twitch_ready`: this bot polls
+/// Twitch (imports warn otherwise).
+pub fn admin_group(store: Arc<Store>, http: reqwest::Client, twitch_ready: bool) -> Group {
     Group::new(
         "admin",
         "Admin",
-        "Admin tools: addrole, removerole, announce (admins).",
+        "Admin tools: addrole, removerole, announce, export, import (admins; import: server owner).",
     )
     .with(RoleCommand::add())
     .with(RoleCommand::remove())
     .with(AnnounceCommand)
+    .with(crate::transfer::ExportCommand::new(store.clone()))
+    .with(crate::transfer::ImportCommand::new(store, http, twitch_ready))
 }
 
 // --- roles ----------------------------------------------------------------------------------------

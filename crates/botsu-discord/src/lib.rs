@@ -12,9 +12,9 @@ use botsu_core::{
     Platform, RoleInfo,
 };
 use serenity::all::{
-    ChannelId, Client, Context, CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, CreateMessage,
-    EditMember, EventHandler, GatewayIntents, GetMessages, Guild, GuildId, Http, Message,
-    MessageId, Ready, RoleId, Timestamp, UserId, VoiceState,
+    ChannelId, ChannelType, Client, Context, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
+    CreateEmbedFooter, CreateMessage, EditMember, EventHandler, GatewayIntents, GetMessages, Guild,
+    GuildId, Http, Message, MessageId, Ready, RoleId, Timestamp, UserId, VoiceState,
 };
 use serenity::async_trait;
 use songbird::input::core::io::ReadOnlySource;
@@ -74,6 +74,44 @@ impl ChatAdapter for DiscordChat {
             .await
             .map_err(err)?;
         Ok(msg.id.to_string())
+    }
+
+    async fn send_file(
+        &self,
+        channel_id: &str,
+        content: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> botsu_core::Result<String> {
+        let mut msg = CreateMessage::new().add_file(CreateAttachment::bytes(data, filename));
+        if !content.is_empty() {
+            msg = msg.content(content);
+        }
+        let sent = ChannelId::new(snowflake(channel_id)?)
+            .send_message(&self.http, msg)
+            .await
+            .map_err(err)?;
+        Ok(sent.id.to_string())
+    }
+
+    async fn text_channels(
+        &self,
+        guild_id: &str,
+    ) -> botsu_core::Result<Vec<botsu_core::ChannelInfo>> {
+        let channels = GuildId::new(snowflake(guild_id)?)
+            .channels(&self.http)
+            .await
+            .map_err(err)?;
+        let mut out: Vec<botsu_core::ChannelInfo> = channels
+            .values()
+            .filter(|c| matches!(c.kind, ChannelType::Text | ChannelType::News))
+            .map(|c| botsu_core::ChannelInfo {
+                id: c.id.to_string(),
+                name: c.name.clone(),
+            })
+            .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
     }
 
     async fn send_embed(
@@ -659,6 +697,15 @@ fn translate(msg: Message) -> IncomingMessage {
             is_bot: msg.author.bot,
         },
         content: msg.content,
+        attachments: msg
+            .attachments
+            .iter()
+            .map(|a| botsu_core::Attachment {
+                url: a.url.clone(),
+                filename: a.filename.clone(),
+                size: u64::from(a.size),
+            })
+            .collect(),
     }
 }
 

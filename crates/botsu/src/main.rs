@@ -83,7 +83,11 @@ async fn main() -> Result<()> {
     let permissions = Arc::new(Permissions::new(store.clone()));
     bot.set_permissions(permissions.clone());
     bot.register(SetCommand::new(store.clone()));
-    bot.register(server::admin_group());
+    bot.register(server::admin_group(
+        store.clone(),
+        http.clone(),
+        twitch.is_some(),
+    ));
     let mod_tools = ModTools::new(store.clone(), permissions);
     bot.register(moderation::group(&mod_tools));
     if !bot.has_owners() {

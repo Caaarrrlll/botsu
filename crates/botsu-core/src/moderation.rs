@@ -1396,6 +1396,7 @@ Reason: spam"
                     is_bot: false,
                 },
                 content: content.into(),
+                attachments: Vec::new(),
             };
             self.bot.handle_message(self.chat.clone(), message).await;
             self.chat.last_sent("here")

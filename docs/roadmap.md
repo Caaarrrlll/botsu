@@ -182,7 +182,8 @@ Runbook: [cutover.md](cutover.md).
 - [ ] Move Tube/streams subscriptions and mod settings over; check nothing is posted twice during the overlap.
 - [ ] Stop Red, then remove the Red container and Lavalink. Record memory before and after.
 - [ ] Update the server notes (template snapshot, env file location, update procedure).
-- [ ] Optional: export/import a server's settings (subscriptions, admin/mod roles, mod log, volume; no user data) between any two servers, Discord or Fluxer. Plan: [settings-migration.md](settings-migration.md).
+- [x] Export/import a server's setup between any two servers, Discord or Fluxer (`admin export`, `admin import` + file → preview → `confirm`; `--replace`, `map old = new`). No user data. `transfer.rs`; plan and details: [settings-migration.md](settings-migration.md). Live test: testing.md section 9.
+- [ ] Optional, later: `import --create-channels`, and `import from <platform> <server>` within one botsu.
 
 **Done when:** Red is gone and nobody noticed.
 

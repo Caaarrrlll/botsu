@@ -17,6 +17,7 @@ pub mod music;
 pub mod permissions;
 pub mod server;
 pub mod storage;
+pub mod transfer;
 pub mod voice;
 pub mod ytdlp;
 
@@ -51,8 +52,8 @@ pub fn invite_permissions(admin: bool) -> u64 {
 }
 
 pub use adapter::{
-    Author, BanInfo, Capabilities, ChatAdapter, Embed, HistoryMessage, IncomingMessage, Platform,
-    RoleInfo,
+    Attachment, Author, BanInfo, Capabilities, ChannelInfo, ChatAdapter, Embed, HistoryMessage,
+    IncomingMessage, Platform, RoleInfo,
 };
 pub use bot::Bot;
 pub use command::{Command, CommandContext};
