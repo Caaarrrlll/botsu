@@ -94,7 +94,7 @@ const MIGRATIONS: &[&str] = &[
     );",
     // 5: custom alert text and a role (or @everyone/@here) to mention, per subscription
     "ALTER TABLE subscriptions ADD COLUMN message TEXT;  -- NULL = the default text
-    ALTER TABLE subscriptions ADD COLUMN mention TEXT;  -- role ID | 'everyone' | 'here' | NULL",
+    ALTER TABLE subscriptions ADD COLUMN mention TEXT;  -- role ID | 'user:<ID>' | 'everyone' | 'here' | NULL",
     // 6: mutes with the server's mute role that end by themselves
     "CREATE TABLE scheduled_unmutes (
         platform    TEXT NOT NULL,
@@ -154,7 +154,7 @@ pub struct Subscription {
     pub created_by: String,
     /// Custom alert text with `{name}`, `{title}`, `{url}`, `{game}`, `{event}`; `None` = default.
     pub message: Option<String>,
-    /// Role ID, `everyone` or `here`, mentioned at the start of each alert.
+    /// Role ID, `user:<ID>`, `everyone` or `here`, mentioned at the start of each alert.
     pub mention: Option<String>,
 }
 
