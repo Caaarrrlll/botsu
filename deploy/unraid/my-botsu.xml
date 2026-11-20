@@ -19,7 +19,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/Caaarrrlll/botsu/issues</Support>
   <Project>https://github.com/Caaarrrlll/botsu</Project>
-  <Overview>Lean self-hosted chat bot for Discord and Fluxer: YouTube upload/live and Twitch live alerts, moderation (cases, warnings, temp-bans, mod log), server tools and music (YouTube via yt-dlp). Replaces Red-DiscordBot without Java/Lavalink. Fill in the fields below (at least the Discord or Fluxer token), or leave them blank and use the settings file the container creates at /mnt/user/appdata/botsu/botsu.env; fields win over the file. No ports are needed.</Overview>
+  <Overview>Lean self-hosted chat bot for Discord and Fluxer: YouTube upload/live and Twitch live alerts (custom text and role pings per alert), moderation (cases, warnings, temp-bans, mutes, mod log, optional DMs), server tools (cleanup, roles, announcements) and music (YouTube via yt-dlp). Replaces Red-DiscordBot without Java/Lavalink. Fill in the fields below (at least the Discord or Fluxer token), or leave them blank and use the settings file the container creates at /mnt/user/appdata/botsu/botsu.env; fields win over the file. No ports are needed.</Overview>
   <Category>Tools: Status:Beta</Category>
   <WebUI/>
   <TemplateURL>https://raw.githubusercontent.com/Caaarrrlll/botsu/master/deploy/unraid/my-botsu.xml</TemplateURL>
