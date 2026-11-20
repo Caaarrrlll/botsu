@@ -4,7 +4,7 @@
 //! |---|---|
 //! | `set adminrole/modrole add/remove <role>`, `set roles`, `set modlog`, `set muterole`, `set moddm` | server owner |
 //! | `cleanup messages/user/bots` | mod |
-//! | `addrole`, `removerole`, `announce` | admin |
+//! | `addrole <role> <@user…>`, `removerole <role> <@user…>`, `announce` | admin |
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,7 +12,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::adapter::{ChatAdapter, RoleInfo, ADMINISTRATOR, MANAGE_ROLES};
-use crate::alerts::parse_channel;
+use crate::alerts::{escape_md, parse_channel};
 use crate::command::{Command, CommandContext, Group};
 use crate::error::{Error, Result};
 use crate::moderation::{MODLOG_KEY, MOD_DM_KEY, MUTE_ROLE_KEY};
@@ -460,9 +460,9 @@ impl Command for RoleCommand {
 
     fn help(&self) -> &'static str {
         if self.add {
-            "Give a member a role (admins)."
+            "Give a role to one or more members (admins)."
         } else {
-            "Take a role from a member (admins)."
+            "Take a role from one or more members (admins)."
         }
     }
 
@@ -472,15 +472,20 @@ impl Command for RoleCommand {
 
     async fn run(&self, ctx: CommandContext) -> Result<()> {
         let guild = guild(&ctx)?;
-        let (who, role_arg) = split_user_role(&ctx.args);
-        let user = parse_user(who).ok_or_else(|| {
-            Error::Usage(format!(
-                "Usage: `{}{} <@user> <role>`",
+        let (role_arg, users) = split_role_users(&ctx.args);
+        if users.is_empty() || role_arg.is_empty() {
+            return Err(Error::Usage(format!(
+                "Usage: `{}{} <role> <@user> [@user …]` (role by mention, ID or name)",
                 ctx.prefix,
                 self.name()
-            ))
-        })?;
-        let role = resolve_role(&ctx, &guild, role_arg).await?;
+            )));
+        }
+        if users.len() > ROLE_USERS_MAX {
+            return Err(Error::Usage(format!(
+                "Up to {ROLE_USERS_MAX} members at a time."
+            )));
+        }
+        let role = resolve_role(&ctx, &guild, &role_arg).await?;
         // Roles carrying Administrator: only the server owner (or a bot owner) may hand them out.
         if self.add && role.permissions & ADMINISTRATOR != 0 && ctx.level < Level::ServerOwner {
             return Err(Error::Usage(format!(
@@ -488,37 +493,70 @@ impl Command for RoleCommand {
                 role.name
             )));
         }
-        let result = if self.add {
-            ctx.chat.add_role(&guild, &user, &role.id).await
-        } else {
-            ctx.chat.remove_role(&guild, &user, &role.id).await
-        };
-        if let Err(e) = result {
-            tracing::info!(error = %e, role = %role.name, "role change refused");
-            let why = role_refusal(&*ctx.chat, &guild, &role).await;
-            return Err(Error::Usage(format!(
-                "I couldn't change **{}**. {why}",
-                role.name
-            )));
+        let (mut done, mut failed) = (Vec::new(), Vec::new());
+        for user in &users {
+            let result = if self.add {
+                ctx.chat.add_role(&guild, user, &role.id).await
+            } else {
+                ctx.chat.remove_role(&guild, user, &role.id).await
+            };
+            // Names, not mentions: nobody gets pinged about a role change.
+            let name = match ctx.chat.user_name(user).await {
+                Ok(n) => format!("**{}**", escape_md(&n)),
+                Err(_) => format!("`{user}`"),
+            };
+            match result {
+                Ok(()) => done.push(name),
+                Err(e) => {
+                    tracing::info!(error = %e, role = %role.name, user, "role change refused");
+                    failed.push(name);
+                }
+            }
         }
-        let done = if self.add { "Added" } else { "Removed" };
-        ctx.reply(&format!("{done} the **{}** role.", role.name))
-            .await?;
+        let role_name = escape_md(&role.name);
+        let mut reply = String::new();
+        if !done.is_empty() {
+            let (verb, dir) = if self.add {
+                ("Gave", "to")
+            } else {
+                ("Took", "from")
+            };
+            reply.push_str(&format!(
+                "{verb} **{role_name}** {dir} {}.",
+                done.join(", ")
+            ));
+        }
+        if !failed.is_empty() {
+            // Usually the same cause for everyone: work it out once.
+            let why = role_refusal(&*ctx.chat, &guild, &role).await;
+            if !reply.is_empty() {
+                reply.push('\n');
+            }
+            reply.push_str(&format!(
+                "I couldn't change **{role_name}** for {}. {why}",
+                failed.join(", ")
+            ));
+        }
+        ctx.reply(&reply).await?;
         Ok(())
     }
 }
 
-/// `"<@user> <role…>"`, or the other way round when the role comes first as a mention
-/// (`<@&id> <@user>`): returns `(user, role)`.
-fn split_user_role(args: &str) -> (&str, &str) {
-    let args = args.trim();
-    if args.starts_with("<@&") {
-        if let Some((role, user)) = args.rsplit_once(char::is_whitespace) {
-            return (user, role.trim());
-        }
+/// Most members one `addrole`/`removerole` changes.
+const ROLE_USERS_MAX: usize = 25;
+
+/// `"<role…> <@user> [@user …]"` → `(role, users)`. The role is a mention, ID or name (names
+/// may have spaces); every trailing word that is a user mention or ID is a member, but the first
+/// word always belongs to the role.
+fn split_role_users(args: &str) -> (String, Vec<String>) {
+    let words: Vec<&str> = args.split_whitespace().collect();
+    let mut cut = words.len();
+    while cut > 1 && parse_user(words[cut - 1]).is_some() {
+        cut -= 1;
     }
-    let (user, role) = args.split_once(char::is_whitespace).unwrap_or((args, ""));
-    (user, role.trim())
+    let mut users: Vec<String> = words[cut..].iter().filter_map(|w| parse_user(w)).collect();
+    users.dedup();
+    (words[..cut].join(" "), users)
 }
 
 /// Why the platform probably refused a role change, with the fix: the bot's highest role isn't
@@ -603,17 +641,29 @@ impl Command for AnnounceCommand {
 mod tests {
 
     #[test]
-    fn user_and_role_in_either_order() {
+    fn role_then_members() {
+        let users = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(
-            split_user_role("<@1> Testing Role"),
-            ("<@1>", "Testing Role")
+            split_role_users("Testing Role <@1> <@!2>"),
+            ("Testing Role".to_owned(), users(&["1", "2"]))
         );
-        assert_eq!(split_user_role("<@&2> <@1>"), ("<@1>", "<@&2>"));
-        assert_eq!(split_user_role("<@1> <@&2>"), ("<@1>", "<@&2>"));
-        assert_eq!(split_user_role("<@1>"), ("<@1>", ""));
+        assert_eq!(
+            split_role_users("<@&9> <@1>"),
+            ("<@&9>".to_owned(), users(&["1"]))
+        );
+        // A role given by ID: the first word stays the role.
+        assert_eq!(
+            split_role_users("9 1 2"),
+            ("9".to_owned(), users(&["1", "2"]))
+        );
+        assert_eq!(
+            split_role_users("Testing Role"),
+            ("Testing Role".to_owned(), users(&[]))
+        );
+        assert_eq!(split_role_users("<@1>"), ("<@1>".to_owned(), users(&[])));
     }
 
-    use super::{parse_user, split_user_role};
+    use super::{parse_user, split_role_users};
 
     #[test]
     fn user_arguments() {
