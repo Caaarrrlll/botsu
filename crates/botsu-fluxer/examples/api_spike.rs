@@ -5,7 +5,12 @@
 //! / Kick Members for the optional steps), a throwaway text channel, a second account to act on
 //! (not an admin) and a role below the bot's highest role: pass `new` as the role and the spike
 //! creates a "botsu spike" role (new roles start at the bottom, below the bot's) and deletes it
-//! at the end.
+//! at the end. Pass `self` as the target user to act on the bot itself where that's allowed
+//! (roles); timeouts, kick and ban then need a second account and are skipped.
+//!
+//! Also checks the adapter pieces newer features use: embeds (alerts), file upload and the
+//! channel list (settings export/import), the server name (moderation DMs). Test messages are
+//! deleted again.
 //!
 //! ```text
 //! ./scripts/run.ps1 -Example api_spike -- <guild> <channel> <target user> <role> [--kick] [--ban] [--old <message id>]
@@ -161,6 +166,12 @@ async fn main() {
         }
     };
     println!("API: {}  bot: {bot_id}\n", http.base_url);
+    let on_self = args.target.eq_ignore_ascii_case("self");
+    if on_self {
+        args.target = bot_id.clone();
+        args.kick = false;
+        args.ban = false;
+    }
     let chat = FluxerChat::new(http.clone(), bot_id.clone());
     let mut r = Report::default();
 
@@ -183,7 +194,12 @@ async fn main() {
     hierarchy(&chat, &args, &bot_id, &r).await;
     bulk_delete(&chat, &http, &args, &mut r).await;
     roles(&chat, &args, &mut r).await;
-    timeouts(&chat, &http, &args, &mut r).await;
+    if on_self {
+        r.info("timeouts, kick, ban: skipped (they need a second account as the target)");
+    } else {
+        timeouts(&chat, &http, &args, &mut r).await;
+    }
+    adapter_pieces(&chat, &http, &args, &mut r).await;
     match chat.bans(&args.guild).await {
         Ok(b) => r.check(true, format!("list bans ({} entries)", b.len())),
         Err(e) => r.check(false, format!("list bans: {e}")),
@@ -194,7 +210,11 @@ async fn main() {
     if args.ban {
         bans(&chat, &http, &args, &mut r).await;
     }
-    audit_log(&http, &args, &bot_id, &mut r).await;
+    if on_self {
+        r.info("audit-log reasons: skipped (only timeout, kick and ban send one)");
+    } else {
+        audit_log(&http, &args, &bot_id, &mut r).await;
+    }
     if made_role {
         let path = format!("/guilds/{}/roles/{}", args.guild, args.role);
         let res = raw(&http, "DELETE", &path, None).await;
@@ -433,6 +453,104 @@ async fn bans(chat: &FluxerChat, http: &Http, a: &Args, r: &mut Report) {
     );
     let res = chat.unban(&a.guild, &a.target, None).await;
     r.check(res.is_ok(), format!("lift the temporary ban {res:?}"));
+}
+
+/// Embeds, file upload, the channel list and the server name, through botsu's own adapter.
+async fn adapter_pieces(chat: &FluxerChat, http: &Http, a: &Args, r: &mut Report) {
+    match chat.text_channels(&a.guild).await {
+        Ok(list) => r.check(
+            list.iter().any(|c| c.id == a.channel),
+            format!(
+                "text_channels lists the test channel ({} channels)",
+                list.len()
+            ),
+        ),
+        Err(e) => r.check(false, format!("text_channels: {e}")),
+    }
+    match chat.guild_name(&a.guild).await {
+        Ok(name) => r.check(!name.is_empty(), format!("guild_name: {name:?}")),
+        Err(e) => r.check(false, format!("guild_name: {e}")),
+    }
+
+    let message = |id: &str| format!("/channels/{}/messages/{id}", a.channel);
+    let embed = botsu_core::Embed {
+        title: "botsu API spike: embed test".into(),
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ".into(),
+        author: Some("botsu spike".into()),
+        description: Some("Playing **Testing**".into()),
+        image: Some("https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg".into()),
+        color: Some(0x9146FF),
+        footer: Some("Twitch".into()),
+    };
+    match chat
+        .send_embed(&a.channel, "**botsu spike** is live on Twitch", &embed)
+        .await
+    {
+        Ok(id) => {
+            let got = raw(http, "GET", &message(&id), None).await;
+            let kept = got.as_ref().ok().and_then(|(_, v)| {
+                let e = &v["embeds"][0];
+                e.is_object().then(|| {
+                    (
+                        e["title"].as_str().unwrap_or_default().to_owned(),
+                        e["image"]["url"].is_string(),
+                    )
+                })
+            });
+            r.check(
+                matches!(&kept, Some((t, true)) if t == &embed.title),
+                format!("send_embed: Fluxer keeps the embed with title and image: {kept:?}"),
+            );
+            let _ = raw(http, "DELETE", &message(&id), None).await;
+        }
+        Err(e) => r.check(false, format!("send_embed: {e}")),
+    }
+
+    match chat
+        .send_file(
+            &a.channel,
+            "botsu API spike: file upload test",
+            "botsu-spike.json",
+            br#"{"botsu_export": 1}"#.to_vec(),
+        )
+        .await
+    {
+        Ok(id) => {
+            let got = raw(http, "GET", &message(&id), None).await;
+            let file = got.as_ref().ok().and_then(|(_, v)| {
+                let f = &v["attachments"][0];
+                f.is_object().then(|| {
+                    (
+                        f["filename"].as_str().unwrap_or_default().to_owned(),
+                        f["url"].as_str().unwrap_or_default().to_owned(),
+                    )
+                })
+            });
+            r.check(
+                matches!(&file, Some((n, _)) if n == "botsu-spike.json"),
+                format!("send_file: the attachment is there: {file:?}"),
+            );
+            // Import downloads the file the same way: a plain GET, no token.
+            if let Some((_, url)) = file.filter(|(_, u)| !u.is_empty()) {
+                let body = reqwest_get(&url).await;
+                r.check(
+                    body.as_deref() == Some(r#"{"botsu_export": 1}"#),
+                    format!("download the attachment without a token: {body:?}"),
+                );
+            }
+            let _ = raw(http, "DELETE", &message(&id), None).await;
+        }
+        Err(e) => r.check(false, format!("send_file: {e}")),
+    }
+}
+
+async fn reqwest_get(url: &str) -> Option<String> {
+    let client = Http::new_user("", String::new()).client;
+    let resp = client.get(url).send().await.ok()?;
+    if !resp.status().is_success() {
+        return Some(format!("HTTP {}", resp.status()));
+    }
+    resp.text().await.ok()
 }
 
 /// The spike's entries in the audit log, to see whether the reason header arrived intact.

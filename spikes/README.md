@@ -73,17 +73,26 @@ one older than 14 days) to confirm there's no age limit. `--kick` kicks the targ
 invite). `--ban` bans, lists, unbans, unbans again (should fail), then tries a 1-hour ban via
 `ban_duration_seconds` and lifts it.
 
-Results (fill in after the run):
+Results. First run 2026-11-20 on the self-hosted instance, test server "Testing stuff", with the
+bot as its own target (`self new`), so the account checks are still open:
 
 | Check | Result |
 |---|---|
-| Bulk delete (botsu's call, 1 ID, limits) | |
-| Messages older than 14 days | |
-| Roles | |
-| Timeouts (2 min, 30 days, clearing) | |
-| Kick | |
-| Ban, unban, ban list, temporary ban | |
-| Audit-log reason intact | |
+| Bulk delete (botsu's call, 1 ID, limits) | ✅ botsu's call; **1 ID accepted** (Discord needs 2+); 0 and 101 IDs refused; 100 unknown IDs accepted |
+| Messages older than 14 days | open: needs a message older than 14 days |
+| Roles (create, give, take, take again, delete) | ✅ |
+| Embeds (alerts) | ✅ kept with title and large image |
+| File upload, download without a token (export/import) | ✅ |
+| Channel list, server name | ✅ |
+| Ban list | ✅ |
+| Timeouts (2 min, 30 days, clearing) | open: needs a second account |
+| Kick | open: needs a second account |
+| Ban, unban, temporary ban | open: needs a second account |
+| Audit-log reason intact | open: only timeout/kick/ban send one |
+
+Finding: the bot's own role and a freshly created role both reported **position 1**. Fluxer
+positions may not be unique like Discord's, so botsu's position comparisons (moderation
+hierarchy, the addrole refusal hint) can see a tie. Check against a real role setup.
 
 If the old-message and 30-day checks pass, botsu can drop the 14-day cleanup stop and allow longer
 timeouts on Fluxer (per-platform limits in `Capabilities`).
