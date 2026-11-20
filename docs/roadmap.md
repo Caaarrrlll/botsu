@@ -81,8 +81,8 @@ The easiest cross-platform feature: "post a message in channel X". Replaces Red'
 - [x] Alerts target channels on either platform; the same source can post to Discord and Fluxer channels.
 - [ ] Live test: a real upload and a real stream posted once on both platforms, nothing reposted after a restart. Upload confirmed on Discord (2026-11-20, 2 min after Red); streams (YouTube and Twitch) and Fluxer still to do.
 - [x] `tube import` / `twitch import`: create subscriptions from a pasted list (Red's `tube list` format, Twitch names with `and`/commas, `youtube:`/`twitch:` sections).
-- [ ] Optional, Red parity: custom alert message and role mention per subscription.
-- [ ] Optional: `tube remove <name> #channel` to remove a source from one channel only.
+- [x] Red parity: custom alert text (`tube|twitch message`, placeholders) and a role / @everyone / @here mention per subscription (`tube|twitch mention`), migration 5. Live test in testing.md section 5.
+- [x] `tube|twitch remove <name> #channel` removes a source from one channel only.
 - [ ] Optional: record the Fluxer instance on subscriptions, if the bot ever needs to move between instances with the same database (see architecture.md, `subscriptions`).
 
 **Done when:** new uploads and live streams are posted once on Discord and Fluxer, and a restart doesn't repost anything.

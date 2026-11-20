@@ -195,8 +195,8 @@ async fn poll_youtube(
                 subs.iter().filter(|s| s.include_shorts).cloned().collect();
             if !wanted.is_empty() {
                 tracing::info!(channel = %ch, video = %v.id, "new YouTube Short");
-                let text = format!("**{ch}** posted a new Short: **{}**\n{}", v.title, v.url);
-                deliver(bot, &wanted, &text).await;
+                let alert = Alert::new(Event::Short, ch, &v.title, &v.url);
+                deliver(bot, &wanted, &alert).await;
             }
             continue;
         }
@@ -211,12 +211,13 @@ async fn poll_youtube(
         match state {
             Some(youtube::LiveState::None) => {
                 tracing::info!(channel = %ch, video = %v.id, "new YouTube upload");
-                let text = format!("**{ch}** posted a new video: **{}**\n{}", v.title, v.url);
-                deliver(bot, subs, &text).await;
+                let alert = Alert::new(Event::Upload, ch, &v.title, &v.url);
+                deliver(bot, subs, &alert).await;
             }
             Some(youtube::LiveState::Live) => {
                 tracing::info!(channel = %ch, video = %v.id, "YouTube stream is live");
-                deliver(bot, subs, &yt_live_text(ch, &v.title, &v.url)).await;
+                let alert = Alert::new(Event::YouTubeLive, ch, &v.title, &v.url);
+                deliver(bot, subs, &alert).await;
             }
             Some(youtube::LiveState::Upcoming) | None => {
                 tracing::info!(channel = %ch, video = %v.id, "YouTube item waiting (scheduled, or API unavailable)");
@@ -244,37 +245,137 @@ async fn poll_youtube(
     for p in pending {
         let subs = sources.get(&p.source_id);
         let expired = now() - p.added_at > PENDING_MAX_AGE_SECS;
-        let text = match map.get(&p.item_id).map(|i| (i.state, i.started)) {
+        let event = match map.get(&p.item_id).map(|i| (i.state, i.started)) {
             Some((youtube::LiveState::Upcoming, _)) if !expired && subs.is_some() => continue,
-            Some((youtube::LiveState::Live, _)) => {
-                Some(yt_live_text(&p.source_name, &p.title, &p.url))
-            }
+            Some((youtube::LiveState::Live, _)) => Some(Event::YouTubeLive),
             // Went live and ended between two polls.
-            Some((youtube::LiveState::None, true)) => Some(format!(
-                "**{}** was live on YouTube: **{}**\n{}",
-                p.source_name, p.title, p.url
-            )),
+            Some((youtube::LiveState::None, true)) => Some(Event::YouTubeWasLive),
             // Waited only because the API was down: a normal upload.
-            Some((youtube::LiveState::None, false)) => Some(format!(
-                "**{}** posted a new video: **{}**\n{}",
-                p.source_name, p.title, p.url
-            )),
+            Some((youtube::LiveState::None, false)) => Some(Event::Upload),
             // Deleted/private, expired, or nobody subscribes any more.
             _ => None,
         };
         store
             .remove_pending(AlertKind::YouTube, &p.item_id)
             .map_err(db)?;
-        if let (Some(text), Some(subs)) = (text, subs) {
+        if let (Some(event), Some(subs)) = (event, subs) {
             tracing::info!(channel = %p.source_name, video = %p.item_id, "waiting YouTube item posted");
-            deliver(bot, subs, &text).await;
+            deliver(
+                bot,
+                subs,
+                &Alert::new(event, &p.source_name, &p.title, &p.url),
+            )
+            .await;
         }
     }
     Ok(())
 }
 
-fn yt_live_text(channel: &str, title: &str, url: &str) -> String {
-    format!("**{channel}** is live on YouTube: **{title}**\n{url}")
+/// What happened, for the default text and the `{event}` placeholder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Event {
+    Upload,
+    Short,
+    YouTubeLive,
+    YouTubeWasLive,
+    TwitchLive,
+}
+
+impl Event {
+    fn phrase(self) -> &'static str {
+        match self {
+            Event::Upload => "posted a new video",
+            Event::Short => "posted a new Short",
+            Event::YouTubeLive => "is live on YouTube",
+            Event::YouTubeWasLive => "was live on YouTube",
+            Event::TwitchLive => "is live on Twitch",
+        }
+    }
+}
+
+/// One alert, rendered per subscription: its custom text (if set) and mention.
+pub(crate) struct Alert {
+    pub event: Event,
+    pub name: String,
+    pub title: String,
+    pub url: String,
+    /// Twitch category; empty for YouTube.
+    pub game: String,
+}
+
+/// Placeholders a custom alert text may use (`tube message`, `twitch message`).
+pub const PLACEHOLDERS: &str = "`{name}`, `{title}`, `{url}`, `{game}` (Twitch), `{event}`";
+
+impl Alert {
+    pub(crate) fn new(event: Event, name: &str, title: &str, url: &str) -> Self {
+        Self {
+            event,
+            name: name.to_owned(),
+            title: title.to_owned(),
+            url: url.to_owned(),
+            game: String::new(),
+        }
+    }
+
+    pub(crate) fn twitch(s: &twitch::Stream) -> Self {
+        Self {
+            event: Event::TwitchLive,
+            name: s.user_name.clone(),
+            title: s.title.clone(),
+            url: format!("https://twitch.tv/{}", s.user_login),
+            game: s.game_name.clone(),
+        }
+    }
+
+    /// The built-in text.
+    pub(crate) fn default_text(&self) -> String {
+        let (name, event) = (&self.name, self.event.phrase());
+        if self.event == Event::TwitchLive {
+            let mut text = format!("**{name}** {event}");
+            if !self.game.is_empty() {
+                text.push_str(&format!(" playing **{}**", self.game));
+            }
+            if !self.title.is_empty() {
+                text.push_str(&format!(": {}", self.title));
+            }
+            return format!("{text}\n{}", self.url);
+        }
+        format!("**{name}** {event}: **{}**\n{}", self.title, self.url)
+    }
+
+    /// The text for one subscription: its template with the placeholders filled in (the link
+    /// is added on its own line if the template leaves it out, so the preview still shows), or
+    /// the default; then the mention in front.
+    pub(crate) fn text_for(&self, message: Option<&str>, mention: Option<&str>) -> String {
+        let body = match message {
+            Some(t) => {
+                let filled = t
+                    .replace("{name}", &self.name)
+                    .replace("{title}", &self.title)
+                    .replace("{game}", &self.game)
+                    .replace("{event}", self.event.phrase());
+                if filled.contains("{url}") {
+                    filled.replace("{url}", &self.url)
+                } else {
+                    format!("{filled}\n{}", self.url)
+                }
+            }
+            None => self.default_text(),
+        };
+        match mention.map(mention_text) {
+            Some(m) => format!("{m} {body}"),
+            None => body,
+        }
+    }
+}
+
+/// A stored mention (role ID, `everyone`, `here`) as message text.
+pub(crate) fn mention_text(mention: &str) -> String {
+    match mention {
+        "everyone" => "@everyone".to_owned(),
+        "here" => "@here".to_owned(),
+        role => format!("<@&{role}>"),
+    }
 }
 
 async fn poll_twitch(bot: &Bot, store: &Store, twitch: &twitch::Twitch) -> Result<(), String> {
@@ -315,27 +416,22 @@ async fn poll_twitch(bot: &Bot, store: &Store, twitch: &twitch::Twitch) -> Resul
             continue;
         }
         tracing::info!(user = %stream.user_login, stream = %stream.id, "Twitch stream went live");
-        deliver(bot, subs, &live_text(&stream)).await;
+        deliver(bot, subs, &Alert::twitch(&stream)).await;
     }
     Ok(())
 }
 
 pub(crate) fn live_text(s: &twitch::Stream) -> String {
-    let mut text = format!("**{}** is live on Twitch", s.user_name);
-    if !s.game_name.is_empty() {
-        text.push_str(&format!(" playing **{}**", s.game_name));
-    }
-    if !s.title.is_empty() {
-        text.push_str(&format!(": {}", s.title));
-    }
-    text.push_str(&format!("\nhttps://twitch.tv/{}", s.user_login));
-    text
+    Alert::twitch(s).default_text()
 }
 
-/// Posts `text` to every subscribed channel. Failures are logged, not retried: a channel the
-/// bot can't post in shouldn't block the others or cause repeats later.
-async fn deliver(bot: &Bot, subs: &[Subscription], text: &str) {
+/// Posts the alert to every subscribed channel, with each subscription's own text and mention.
+/// Failures are logged, not retried: a channel the bot can't post in shouldn't block the others
+/// or cause repeats later.
+async fn deliver(bot: &Bot, subs: &[Subscription], alert: &Alert) {
     for sub in subs {
+        let text = alert.text_for(sub.message.as_deref(), sub.mention.as_deref());
+        let text = text.as_str();
         let Some(chat) = bot.chat(sub.platform) else {
             tracing::warn!(platform = %sub.platform, "platform not connected; alert skipped");
             continue;
@@ -377,6 +473,28 @@ mod tests {
     fn jitter_stays_within_ten_percent() {
         let d = jitter(Duration::from_secs(100));
         assert!(d >= Duration::from_secs(90) && d <= Duration::from_secs(110));
+    }
+
+    #[test]
+    fn alert_texts() {
+        let a = Alert::new(Event::Upload, "Chan", "Vid", "https://y/1");
+        assert_eq!(
+            a.text_for(None, None),
+            "**Chan** posted a new video: **Vid**\nhttps://y/1"
+        );
+        assert_eq!(
+            a.text_for(Some("{name} {event}: {title} {url}"), Some("123")),
+            "<@&123> Chan posted a new video: Vid https://y/1"
+        );
+        // No {url}: the link goes on its own line so the preview still shows.
+        assert_eq!(
+            a.text_for(Some("New one from {name}!"), Some("everyone")),
+            "@everyone New one from {name}!".replace("{name}", "Chan") + "\nhttps://y/1"
+        );
+        assert_eq!(
+            Alert::new(Event::YouTubeWasLive, "C", "T", "u").text_for(None, Some("here")),
+            "@here **C** was live on YouTube: **T**\nu"
+        );
     }
 
     #[test]

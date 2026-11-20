@@ -140,12 +140,15 @@ Report anything odd with the log output. `RUST_LOG=debug` shows every command ru
 
 ```
 !tube add <channel link | @handle | channel ID> [#channel]
-!tube remove <name | @handle | channel ID>
+!tube remove <name | @handle | channel ID> [#channel]   ← #channel: only from that channel
 !tube list
 !tube shorts <name | channel ID> on|off   ← Shorts are off by default
+!tube message <name> [#channel] = <text>  ← custom alert text; `off` = default; no text = show it
+!tube mention <name> [#channel] <@role | everyone | here | off>
 !twitch add <name | twitch.tv link> [#channel]
-!twitch remove <name>
+!twitch remove <name> [#channel]
 !twitch list
+!twitch message …   !twitch mention …     ← same as for tube
 !tube import [#channel]      ← then paste the other bot's list on the following lines
 !twitch import [#channel]    ← same message, list on the following lines
 ```
@@ -157,8 +160,13 @@ short notice in the target channel; if it can't post there, nothing is saved.
 
 | Subcommand | Allowed |
 |---|---|
-| `add`, `list`, `remove` | anyone |
+| `add`, `list`, `remove`, showing `message` | anyone |
+| setting `message`, `mention` a role | mods |
+| `mention everyone` / `here` | admins |
 | `import`, `tube shorts` | bot owners (`BOTSU_OWNERS`) |
+
+Placeholders for `message`: `{name}`, `{title}`, `{url}`, `{game}` (Twitch), `{event}` ("posted a
+new video", "is live on Twitch", …). Example: `!tube message Some Channel = 🪓 {name} {event}: {title} {url}`.
 
 Deliberately lax for now; role-based permissions come with phase 4.
 
@@ -191,6 +199,9 @@ is skipped and listed. Nothing already published or already live is posted.
 | A new upload appears within ~20 min (YouTube caches the feed up to ~15 min) | ✅ 2026-11-20: twice (once 2 min after Red, once before Red) | |
 | Restarting the bot doesn't repost anything | | |
 | `!twitch add <streamer>` says live/offline correctly | | |
+| `!tube message <name> = …` changes the next alert's text; `!tube list` shows "custom text"; `off` restores it | | |
+| `!tube mention <name> @role` pings the role on the next alert; a non-mod is refused; `everyone` needs admin | | |
+| Same source in two channels: `!tube remove <name> #one` removes only that one | | |
 | A streamer going live is posted once (within ~2 min), not again on restart | | |
 
 Quick way to see an alert without waiting for a real upload: subscribe to a channel that posts
