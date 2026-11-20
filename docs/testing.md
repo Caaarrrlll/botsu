@@ -232,7 +232,7 @@ Each level can do everything the ones below it can. `!help` lists only what you 
 !mod cleanup user <@user> <n>      ← that user's last n messages
 !mod cleanup bots <n>              ← bot messages and !commands
 !admin addrole <role> <@user> [@user …]      ← admins; role by mention, ID or name; up to 25 people
-!admin removerole <@user> <role>
+!admin removerole <role> <@user> [@user …]
 !admin announce <#channel> <text>    ← admins
 ```
 
