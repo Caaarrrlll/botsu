@@ -179,6 +179,7 @@ Runbook: [cutover.md](cutover.md).
 - [ ] Move Tube/streams subscriptions and mod settings over; check nothing is posted twice during the overlap.
 - [ ] Stop Red, then remove the Red container and Lavalink. Record memory before and after.
 - [ ] Update the server notes (template snapshot, env file location, update procedure).
+- [ ] Optional: export/import a server's settings (subscriptions, admin/mod roles, mod log, volume; no user data) between any two servers, Discord or Fluxer. Plan: [settings-migration.md](settings-migration.md).
 
 **Done when:** Red is gone and nobody noticed.
 
