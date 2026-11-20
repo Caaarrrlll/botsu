@@ -89,3 +89,7 @@ spikes/              throwaway phase-0 experiments
 ```
 
 Details (database tables, alert rules, adding a platform or command): [docs/architecture.md](docs/architecture.md).
+
+## License
+
+MIT: free to use, change and share, for any purpose. See [LICENSE](LICENSE).

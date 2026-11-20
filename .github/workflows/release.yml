@@ -51,7 +51,7 @@ jobs:
           [ "$GITHUB_REF_TYPE" = tag ] || version="dev-${GITHUB_SHA::7}"
           dir="botsu-$version-linux-x86_64"
           mkdir -p "$dir"
-          cp target/release/botsu README.md .env.example deploy/systemd/botsu.service "$dir/"
+          cp target/release/botsu README.md LICENSE .env.example deploy/systemd/botsu.service "$dir/"
           tar -czf "target/dist/$dir.tar.gz" "$dir"
 
       - uses: actions/upload-artifact@v7
@@ -82,7 +82,7 @@ jobs:
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "dev-$($env:GITHUB_SHA.Substring(0,7))" }
           $dir = "botsu-$version-windows-x86_64"
           New-Item -ItemType Directory -Force $dir, dist | Out-Null
-          Copy-Item target/release/botsu.exe, README.md, .env.example $dir
+          Copy-Item target/release/botsu.exe, README.md, LICENSE, .env.example $dir
           Compress-Archive -Path $dir -DestinationPath "dist/$dir.zip"
 
       - uses: actions/upload-artifact@v7

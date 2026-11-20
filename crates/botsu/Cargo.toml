@@ -22,6 +22,7 @@ tracing-subscriber.workspace = true
 name = "botsu"
 maintainer = "Caaarrrlll <https://github.com/Caaarrrlll/botsu/issues>"
 copyright = "Caaarrrlll"
+license-file = ["../../LICENSE", "0"]
 extended-description = """\
 Lean self-hosted chat bot for Discord and Fluxer: YouTube and Twitch alerts, moderation, server \
 tools and music. Settings go in /etc/botsu/botsu.env (example in /usr/share/doc/botsu)."""
