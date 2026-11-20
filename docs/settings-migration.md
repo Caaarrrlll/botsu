@@ -169,6 +169,7 @@ const SETTINGS: &[(&str, Portable)] = &[
     (music::VOLUME_KEY, Portable::Value),
     (MUTE_ROLE_KEY, Portable::Role),
     (MOD_DM_KEY, Portable::Value),
+    (EMBEDS_KEY, Portable::Value),
 ];
 ```
 

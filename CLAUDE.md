@@ -63,13 +63,24 @@ schema, adapter trait or alert rules change.
 - Commands are grouped: `!mod …`, `!admin …`, `!music …` (`command::Group`).
 
 ## Current phase
-Running on Unraid from the Docker Hub image (CI publishes on push). Phase 7 runbook: docs/cutover.md. Code done, live tests pending:
-phase 2 alerts (testing.md 5, waiting for a real upload/stream), phase 4 server tools (6), phase 5
-moderation (7), phase 6 music (8; Fluxer playback confirmed, Discord pending). Phase 0 voice works on both. Next after music: phase 7 (cutover). Test targets: self-hosted Fluxer (Unraid) and
-several Discord servers, following docs/testing.md. Red still runs on those Discord servers with
-`$`, so botsu runs with `BOTSU_PREFIX=!` (code default stays `$`). Red is not to be changed until
-botsu is definitely replacing it (phase 7). Phase 0 spikes are still open. Keep the checkboxes in
-docs/roadmap.md up to date as work lands.
+Running on Unraid from the Docker Hub image (CI publishes on push; docs-only pushes skip the image).
+Unraid template on the server matches deploy/unraid/my-botsu.xml (migrated 2026-11-20).
+Live-tested: alerts (testing.md 5: uploads, YouTube live, Twitch live, no reposts, on both platforms),
+`cleanup messages`, Fluxer music playback, phase 0 voice. Still to test: server tools (6), moderation
+(7, incl. mute/moddm), Discord music and volume (8), alert embeds and mentions, the Fluxer API spike.
+Then phase 7 (cutover, docs/cutover.md). Red still runs on the Discord servers with `$`, so botsu
+runs with `BOTSU_PREFIX=!` (code default stays `$`); Red is not to be changed until phase 7.
+Next code: settings export/import (docs/settings-migration.md). Parked: Twitch EventSub, YouTube
+cookies, Stoat. Branch protection waits for the user's git flow. Keep docs/roadmap.md checkboxes
+up to date as work lands.
+
+## Alerts (beyond phase 2)
+- Per subscription: custom text (`message`, placeholders `{name} {title} {url} {game} {event}`) and a
+  mention (role, `user:<ID>`, everyone/here); migration 5. Names/titles are Markdown-escaped (`escape_md`).
+- Delivery (`alerts::deliver`): botsu's own embed (`ChatAdapter::send_embed`, large image: YouTube
+  maxres/hq thumbnail, Twitch live frame 1280x720 with a cache-buster) unless `set embeds off`
+  (`guild_settings.alert_embeds`); falls back to plain text. Text above an embed never has a bare link.
+- Adding a source that's already followed doesn't touch `seen_items` (the poller owns it).
 
 ## fluxer-rust 0.2.1 notes (pinned with `=`; vendored with patches in vendor/fluxer-rust, see vendor/README.md)
 - Patches: `Guild.voice_states` (GUILD_CREATE), `FluxerVoiceConnection::play_input` (ffmpeg with reconnect

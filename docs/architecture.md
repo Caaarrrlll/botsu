@@ -63,6 +63,7 @@ once connected, and pollers look up `bot.chat(platform)` to post.
 | `recent_messages(channel, before, limit)` | no | `cleanup` |
 | `bot_user_id`, `user_name` | no | moderation (hierarchy check, names in the mod-log) |
 | `kick`, `ban`, `unban`, `bans`, `timeout` | no | moderation (phase 5); reasons go to the audit log |
+| `send_embed(channel, text, embed)` | no | alerts (embed with a large image; plain text if refused) |
 | `send_dm(user, text)`, `guild_name` | no | moderation DMs (`set moddm on`). Fluxer opens the DM with `POST /users/@me/channels` |
 
 Optional methods have default bodies that return `Error::Unsupported`, so a platform that can't
@@ -229,6 +230,11 @@ used for detection because polling every channel through the Data API would exce
   a video made public long after upload).
 - **Twitch:** a new stream starting within 15 minutes of the previous one last being seen live
   counts as a reconnect and isn't announced again.
+- **Embeds** (`set embeds on`, the default): the alert is botsu's own embed (title linked, channel
+  as author, YouTube thumbnail `maxresdefault` via a HEAD check else `hqdefault`, or the Twitch live
+  frame at 1280x720 with `?t=<now>` so apps don't show a cached frame). The text above it is
+  "**name** event" or the custom text with `{url}` as `<url>`, never a bare link, so the app adds
+  no second preview. A refused embed falls back to the plain text with the link.
 - **Delivery failures** (missing permissions, deleted channel) are logged and not retried, so one
   bad channel doesn't block others or cause repeats.
 
@@ -342,7 +348,7 @@ Like `scheduled_unbans`, plus `role_id` (the mute role given, removed when `unmu
 ### `guild_settings` (migration 4)
 
 Key/value per `(platform, guild_id, key)`. Keys: `modlog_channel`, `music_volume`, `mute_role`,
-`mod_dm` (`on` or absent).
+`mod_dm` (`on` or absent), `alert_embeds` (`off` or absent).
 
 ## Configuration
 

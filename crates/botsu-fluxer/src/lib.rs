@@ -233,6 +233,44 @@ impl ChatAdapter for FluxerChat {
             .collect())
     }
 
+    async fn send_embed(
+        &self,
+        channel_id: &str,
+        content: &str,
+        embed: &botsu_core::Embed,
+    ) -> botsu_core::Result<String> {
+        // Plain JSON (Discord's embed shape, which Fluxer uses) instead of fluxer-rust's builder.
+        let mut e = serde_json::json!({ "title": embed.title, "url": embed.url });
+        if let Some(a) = &embed.author {
+            e["author"] = serde_json::json!({ "name": a });
+        }
+        if let Some(d) = &embed.description {
+            e["description"] = d.as_str().into();
+        }
+        if let Some(i) = &embed.image {
+            e["image"] = serde_json::json!({ "url": i });
+        }
+        if let Some(c) = embed.color {
+            e["color"] = c.into();
+        }
+        if let Some(f) = &embed.footer {
+            e["footer"] = serde_json::json!({ "text": f });
+        }
+        let mut body = serde_json::json!({ "embeds": [e] });
+        if !content.is_empty() {
+            body["content"] = content.into();
+        }
+        let sent = self
+            .call(
+                Method::Post,
+                &format!("/channels/{channel_id}/messages"),
+                Some(body),
+                None,
+            )
+            .await?;
+        Ok(sent["id"].as_str().unwrap_or_default().to_owned())
+    }
+
     async fn send_dm(&self, user_id: &str, content: &str) -> botsu_core::Result<()> {
         // fluxer-rust has no DM helper: open (or reuse) the DM channel, then post in it.
         let body = serde_json::json!({ "recipient_id": user_id });
