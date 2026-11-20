@@ -1,7 +1,12 @@
 # Runs botsu locally with settings from .env.
 #   ./scripts/run.ps1            debug build, log level from .env
 #   ./scripts/run.ps1 -Release   release build (what the Docker image runs), RUST_LOG=info
-param([switch]$Release)
+#   ./scripts/run.ps1 -Example api_spike -- <args>   a botsu-fluxer example (spikes) with the same settings
+param(
+    [switch]$Release,
+    [string]$Example,
+    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
+)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -18,10 +23,16 @@ foreach ($line in Get-Content $envFile) {
     }
 }
 
-$cargoArgs = @('run', '-p', 'botsu')
+$cargoArgs = if ($Example) { @('run', '-p', 'botsu-fluxer', '--example', $Example) } else { @('run', '-p', 'botsu') }
 if ($Release) {
     $cargoArgs += '--release'
     $env:RUST_LOG = 'info'
+}
+
+$extra = @($Rest | Where-Object { $_ -ne '--' })
+if ($extra.Count -gt 0) {
+    $cargoArgs += '--'
+    $cargoArgs += $extra
 }
 
 Push-Location $root
