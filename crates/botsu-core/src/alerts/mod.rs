@@ -369,12 +369,15 @@ impl Alert {
     }
 }
 
-/// A stored mention (role ID, `everyone`, `here`) as message text.
+/// A stored mention (role ID, `user:<ID>`, `everyone`, `here`) as message text.
 pub(crate) fn mention_text(mention: &str) -> String {
     match mention {
         "everyone" => "@everyone".to_owned(),
         "here" => "@here".to_owned(),
-        role => format!("<@&{role}>"),
+        m => match m.strip_prefix("user:") {
+            Some(user) => format!("<@{user}>"),
+            None => format!("<@&{m}>"),
+        },
     }
 }
 
@@ -490,6 +493,10 @@ mod tests {
         assert_eq!(
             a.text_for(Some("New one from {name}!"), Some("everyone")),
             "@everyone New one from {name}!".replace("{name}", "Chan") + "\nhttps://y/1"
+        );
+        assert_eq!(
+            a.text_for(None, Some("user:77")),
+            "<@77> **Chan** posted a new video: **Vid**\nhttps://y/1"
         );
         assert_eq!(
             Alert::new(Event::YouTubeWasLive, "C", "T", "u").text_for(None, Some("here")),

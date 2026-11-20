@@ -87,9 +87,11 @@ enum MentionArg {
     Everyone,
     Here,
     Role(String),
+    User(String),
 }
 
-/// `"<source> [#channel] <@role | role ID | everyone | here | off>"`.
+/// `"<source> [#channel] <@role | role ID | @user | everyone | here | off>"`.
+/// A bare ID counts as a role.
 fn parse_mention(rest: &str) -> Option<(String, Option<String>, MentionArg)> {
     let (left, last) = rest.trim().rsplit_once(char::is_whitespace)?;
     let arg = match last.to_lowercase().trim_start_matches('@') {
@@ -97,14 +99,18 @@ fn parse_mention(rest: &str) -> Option<(String, Option<String>, MentionArg)> {
         "here" => MentionArg::Here,
         w if is_off(w) => MentionArg::Clear,
         _ => {
-            let id = last
-                .strip_prefix("<@&")
-                .and_then(|r| r.strip_suffix('>'))
-                .unwrap_or(last);
-            if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
-                return None;
+            let digits = |id: &str| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit());
+            let inner = last.strip_prefix("<@").and_then(|r| r.strip_suffix('>'));
+            match inner {
+                Some(r) if r.starts_with('&') && digits(&r[1..]) => {
+                    MentionArg::Role(r[1..].to_owned())
+                }
+                Some(u) if digits(u.trim_start_matches('!')) => {
+                    MentionArg::User(u.trim_start_matches('!').to_owned())
+                }
+                None if digits(last) => MentionArg::Role(last.to_owned()),
+                _ => return None,
             }
-            MentionArg::Role(id.to_owned())
         }
     };
     let (source, channel) = split_channel(left);
@@ -170,6 +176,7 @@ async fn set_mention(
         MentionArg::Everyone => Some("everyone".to_owned()),
         MentionArg::Here => Some("here".to_owned()),
         MentionArg::Role(id) => Some(id),
+        MentionArg::User(id) => Some(format!("user:{id}")),
     };
     let level = match value.as_deref() {
         Some("everyone" | "here") => Level::Admin,
@@ -177,7 +184,7 @@ async fn set_mention(
     };
     require(ctx, level)?;
     if let (Some(id), Some(guild)) = (&value, ctx.message.guild_id.as_deref()) {
-        if !matches!(id.as_str(), "everyone" | "here") {
+        if !matches!(id.as_str(), "everyone" | "here") && !id.starts_with("user:") {
             // Unknown roles are refused; if the roles can't be read, take the ID as given.
             if let Ok(roles) = ctx.chat.roles(guild).await {
                 if !roles.iter().any(|r| &r.id == id) {
@@ -189,6 +196,10 @@ async fn set_mention(
     let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
     let n = store.set_alert_mention(&ids, value.as_deref())?;
     let reply = match &value {
+        Some(v) if v.starts_with("user:") => format!(
+            "Alerts will mention {} ({n} alert(s) updated).",
+            quiet_mention(v)
+        ),
         Some(v) => format!(
             "Alerts will mention {} ({n} alert(s) updated). For it to ping, the role must be \
              mentionable or I need permission to mention everyone.",
@@ -212,8 +223,44 @@ fn require(ctx: &CommandContext, level: Level) -> Result<()> {
 fn quiet_mention(m: &str) -> String {
     match m {
         "everyone" | "here" => format!("`{}`", mention_text(m)),
-        role => format!("role `{role}`"),
+        m => match m.strip_prefix("user:") {
+            Some(user) => format!("user `{user}`"),
+            None => format!("role `{m}`"),
+        },
     }
+}
+
+/// The reply when `message`/`mention`/`remove` match nothing: a mention typed where the name
+/// goes gets an explanation; otherwise the names that do exist here are listed.
+fn not_found(
+    ctx: &CommandContext,
+    store: &Store,
+    (kind, what, cmd): (AlertKind, &str, &str),
+    source: &str,
+    channel: Option<&str>,
+) -> Error {
+    let p = &ctx.prefix;
+    // A plain @word can be a YouTube handle, so only the <@…> / <#…> mention forms count.
+    if source.starts_with("<@") || source.starts_with("<#") {
+        return Error::Usage(format!(
+            "`<name>` is the {what} channel as `{p}{cmd} list` shows it, not a mention. For \
+             example: `{p}{cmd} mention <name> @role` or `{p}{cmd} message <name> = <text>`."
+        ));
+    }
+    let place = channel.map_or("here".to_owned(), |c| format!("in <#{c}>"));
+    let mut names: Vec<String> = store
+        .list_subscriptions(kind, ctx.message.platform, scope(ctx))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| s.source_name)
+        .collect();
+    names.dedup();
+    let known = match names.len() {
+        0 => format!("There are no {what} alerts here yet."),
+        n if n <= 15 => format!("Alerts here: {}.", names.join(", ")),
+        _ => format!("See `{p}{cmd} list`."),
+    };
+    Error::Usage(format!("No {what} alerts for `{source}` {place}. {known}"))
 }
 
 /// What's customised on a subscription, for `list`.
@@ -354,7 +401,7 @@ impl TubeCommand {
              `{p}tube list`\n\
              `{p}tube shorts <name | channel ID> on|off` (Shorts are off by default)\n\
              `{p}tube message <name> [#channel] = <text>` / `off`: custom alert text (mods)\n\
-             `{p}tube mention <name> [#channel] <@role | everyone | here | off>` (mods; everyone/here: admins)\n\
+             `{p}tube mention <name> [#channel] <@role | @user | everyone | here | off>` (mods; everyone/here: admins)\n\
              `{p}tube import [#channel]` + a pasted list with channel IDs on the next lines"
         )
     }
@@ -557,11 +604,8 @@ impl TubeCommand {
         }
         let found = in_channel(self.find(ctx, source).await?, channel);
         if found.is_empty() {
-            let place = channel.map_or("here".to_owned(), |c| format!("in <#{c}>"));
-            return Err(Error::Usage(format!(
-                "No YouTube alerts for `{source}` {place}. See `{}tube list`.",
-                ctx.prefix
-            )));
+            let what = (AlertKind::YouTube, "YouTube", "tube");
+            return Err(not_found(ctx, &self.store, what, source, channel));
         }
         Ok(found)
     }
@@ -683,7 +727,7 @@ impl TwitchCommand {
              `{p}twitch remove <name> [#channel]`\n\
              `{p}twitch list`\n\
              `{p}twitch message <name> [#channel] = <text>` / `off`: custom alert text (mods)\n\
-             `{p}twitch mention <name> [#channel] <@role | everyone | here | off>` (mods; everyone/here: admins)\n\
+             `{p}twitch mention <name> [#channel] <@role | @user | everyone | here | off>` (mods; everyone/here: admins)\n\
              `{p}twitch import [#channel]` + a pasted list of names on the next lines"
         )
     }
@@ -708,11 +752,8 @@ impl TwitchCommand {
         )?;
         let found = in_channel(found, channel);
         if found.is_empty() {
-            let place = channel.map_or("here".to_owned(), |c| format!("in <#{c}>"));
-            return Err(Error::Usage(format!(
-                "No Twitch alerts for `{login}` {place}. See `{}twitch list`.",
-                ctx.prefix
-            )));
+            let what = (AlertKind::Twitch, "Twitch", "twitch");
+            return Err(not_found(ctx, &self.store, what, source, channel));
         }
         Ok(found)
     }
@@ -1003,6 +1044,14 @@ mod tests {
         assert_eq!(
             parse_mention("abc off"),
             Some(("abc".to_owned(), None, MentionArg::Clear))
+        );
+        assert_eq!(
+            parse_mention("abc <@!77>"),
+            Some(("abc".to_owned(), None, MentionArg::User("77".to_owned())))
+        );
+        assert_eq!(
+            parse_mention("abc 42"),
+            Some(("abc".to_owned(), None, MentionArg::Role("42".to_owned())))
         );
         assert_eq!(parse_mention("abc Moderators"), None);
         assert_eq!(parse_mention("abc"), None);
