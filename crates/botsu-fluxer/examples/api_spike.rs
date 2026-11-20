@@ -3,7 +3,9 @@
 //!
 //! Needs a test server where the bot has Manage Messages, Manage Roles, Moderate Members (and Ban
 //! / Kick Members for the optional steps), a throwaway text channel, a second account to act on
-//! (not an admin) and a role below the bot's highest role.
+//! (not an admin) and a role below the bot's highest role: pass `new` as the role and the spike
+//! creates a "botsu spike" role (new roles start at the bottom, below the bot's) and deletes it
+//! at the end.
 //!
 //! ```text
 //! ./scripts/run.ps1 -Example api_spike -- <guild> <channel> <target user> <role> [--kick] [--ban] [--old <message id>]
@@ -134,7 +136,7 @@ fn endpoint() -> FluxerEndpoint {
 
 #[tokio::main]
 async fn main() {
-    let args = match parse_args() {
+    let mut args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
             eprintln!("{e}");
@@ -162,6 +164,22 @@ async fn main() {
     let chat = FluxerChat::new(http.clone(), bot_id.clone());
     let mut r = Report::default();
 
+    // `new`: a throwaway role, deleted again at the end.
+    let made_role = args.role.eq_ignore_ascii_case("new");
+    if made_role {
+        let path = format!("/guilds/{}/roles", args.guild);
+        match raw(&http, "POST", &path, Some(json!({ "name": "botsu spike" }))).await {
+            Ok((200 | 201, v)) if v["id"].is_string() => {
+                args.role = v["id"].as_str().unwrap_or_default().to_owned();
+                r.check(true, format!("create a role (id {})", args.role));
+            }
+            other => {
+                r.check(false, format!("create a role: {other:?}"));
+                return;
+            }
+        }
+    }
+
     hierarchy(&chat, &args, &bot_id, &r).await;
     bulk_delete(&chat, &http, &args, &mut r).await;
     roles(&chat, &args, &mut r).await;
@@ -177,6 +195,14 @@ async fn main() {
         bans(&chat, &http, &args, &mut r).await;
     }
     audit_log(&http, &args, &bot_id, &mut r).await;
+    if made_role {
+        let path = format!("/guilds/{}/roles/{}", args.guild, args.role);
+        let res = raw(&http, "DELETE", &path, None).await;
+        r.check(
+            matches!(res, Ok((204 | 200, _))),
+            format!("delete the spike role: {res:?}"),
+        );
+    }
 
     let failed = r.0.iter().filter(|(ok, _)| !ok).count();
     println!("\n{} checks, {failed} failed", r.0.len());
