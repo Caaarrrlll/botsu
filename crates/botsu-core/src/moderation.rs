@@ -2,7 +2,7 @@
 //!
 //! | Command | Level |
 //! |---|---|
-//! | `warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`, `untimeout` | mod |
+//! | `warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`, `untimeout`, `mute`, `unmute` | mod |
 //! | `case`, `cases`, `reason`, `unwarn`, `bans` | mod |
 //! | `warnings` (yourself) | anyone; someone else: mod |
 //!
@@ -10,6 +10,13 @@
 //! when one is set (`set modlog #channel`). Temp-bans are normal bans plus a row in
 //! `scheduled_unbans`; a background task lifts them when they're due, including ones that came
 //! due while the bot was down. Timeouts expire on the platform's side.
+//!
+//! `mute` gives the server's mute role (`set muterole`; the role's channel permissions are the
+//! server's business). With a duration, `scheduled_unmutes` takes it off again, through the same
+//! task as temp-bans. Without a mute role, `mute` is a timeout and needs a duration.
+//!
+//! With `set moddm on`, the member gets a DM saying what happened and why before the action
+//! (kick and ban have to come first: afterwards the bot may not share a server with them).
 //!
 //! Hierarchy: nobody can act on themselves, the bot or the server owner. Below the server owner,
 //! the target must be below the moderator in both botsu's levels (a mod can't kick an admin)
@@ -27,10 +34,14 @@ use crate::command::{Command, CommandContext, Group};
 use crate::error::{Error, Result};
 use crate::permissions::{Level, Permissions};
 use crate::server::{guild, parse_user, CleanupCommand};
-use crate::storage::{now, Case, NewCase, ScheduledUnban, Store};
+use crate::storage::{now, Case, NewCase, ScheduledUnban, ScheduledUnmute, Store};
 
 /// `guild_settings` key for the mod-log channel.
 pub const MODLOG_KEY: &str = "modlog_channel";
+/// `guild_settings` key for the mute role.
+pub const MUTE_ROLE_KEY: &str = "mute_role";
+/// `guild_settings` key: `on` to DM members about actions taken against them.
+pub const MOD_DM_KEY: &str = "mod_dm";
 
 /// Platforms cap audit-log reasons at 512 characters.
 const MAX_REASON: usize = 512;
@@ -168,10 +179,12 @@ pub enum Action {
     Unban,
     Timeout,
     Untimeout,
+    Mute,
+    Unmute,
 }
 
 impl Action {
-    pub const ALL: [Action; 7] = [
+    pub const ALL: [Action; 9] = [
         Action::Warn,
         Action::Kick,
         Action::Ban,
@@ -179,6 +192,8 @@ impl Action {
         Action::Unban,
         Action::Timeout,
         Action::Untimeout,
+        Action::Mute,
+        Action::Unmute,
     ];
 
     /// The command name, also stored as the case's action.
@@ -191,6 +206,8 @@ impl Action {
             Action::Unban => "unban",
             Action::Timeout => "timeout",
             Action::Untimeout => "untimeout",
+            Action::Mute => "mute",
+            Action::Unmute => "unmute",
         }
     }
 
@@ -201,7 +218,29 @@ impl Action {
             Action::Kick => "Kick Members",
             Action::Ban | Action::TempBan | Action::Unban => "Ban Members",
             Action::Timeout | Action::Untimeout => "Moderate Members (Timeout Members)",
+            Action::Mute | Action::Unmute => "Manage Roles (above the mute role)",
         }
+    }
+
+    /// The DM sent to the member when `set moddm` is on; `None` for actions that don't get one.
+    fn dm(self, server: &str, duration: Option<i64>, reason: Option<&str>) -> Option<String> {
+        let what = match self {
+            Action::Warn => "You were warned in",
+            Action::Kick => "You were kicked from",
+            Action::Ban | Action::TempBan => "You were banned from",
+            Action::Timeout => "You were timed out in",
+            Action::Mute => "You were muted in",
+            Action::Unban | Action::Untimeout | Action::Unmute => return None,
+        };
+        let mut text = format!("{what} **{server}**");
+        if let Some(d) = duration {
+            text.push_str(&format!(" for {}", format_duration(d)));
+        }
+        text.push('.');
+        if let Some(r) = reason {
+            text.push_str(&format!("\nReason: {r}"));
+        }
+        Some(text)
     }
 }
 
@@ -215,6 +254,8 @@ fn title(key: &str) -> &str {
         "unban" => "Unban",
         "timeout" => "Timeout",
         "untimeout" => "Timeout removed",
+        "mute" => "Mute",
+        "unmute" => "Unmute",
         other => other,
     }
 }
@@ -418,7 +459,113 @@ impl ModTools {
     }
 }
 
-/// Checks for due temp-bans every 30 s, starting right away (catching up after downtime).
+impl ModTools {
+    /// Takes the mute role off members whose mute is due. Run with the temp-ban check.
+    pub async fn lift_due_mutes(&self, bot: &Bot) {
+        let due = match self.store.due_unmutes(now()) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!(error = %e, "couldn't read due mutes");
+                return;
+            }
+        };
+        for u in due {
+            let Some(chat) = bot.chat(u.platform) else {
+                continue;
+            };
+            if let Err(e) = self.unmute_due(&*chat, &u).await {
+                tracing::warn!(error = %e, guild = %u.guild_id, user = %u.user_id, "mute expiry failed");
+            }
+        }
+    }
+
+    async fn unmute_due(&self, chat: &dyn ChatAdapter, u: &ScheduledUnmute) -> Result<()> {
+        let reason = format!("Mute (case #{}) ended", u.case_number);
+        let (platform, guild, user) = (u.platform, u.guild_id.as_str(), u.user_id.as_str());
+        match chat.remove_role(guild, user, &u.role_id).await {
+            Ok(()) => {
+                self.store.cancel_unmute(platform, guild, user)?;
+                self.record(
+                    chat,
+                    NewCase {
+                        platform,
+                        guild_id: guild,
+                        action: Action::Unmute.key(),
+                        target_id: user,
+                        moderator_id: "",
+                        reason: Some(&reason),
+                        expires_at: None,
+                    },
+                )
+                .await?;
+                tracing::info!(%platform, guild, user, "mute ended");
+                Ok(())
+            }
+            Err(e) => {
+                // Left the server, or the role is already gone: nothing left to do.
+                let still_muted = chat
+                    .member_roles(guild, user)
+                    .await
+                    .map(|roles| roles.contains(&u.role_id))
+                    .unwrap_or(false);
+                if !still_muted {
+                    self.store.cancel_unmute(platform, guild, user)?;
+                    return Ok(());
+                }
+                if u.attempts + 1 >= UNBAN_MAX_ATTEMPTS {
+                    self.store.cancel_unmute(platform, guild, user)?;
+                    let name = self.name(chat, user).await;
+                    let text = format!(
+                        "I couldn't end the mute from case #{} on {name} (`{user}`) and gave \
+                         up: {e}. Please remove the mute role by hand.",
+                        u.case_number
+                    );
+                    self.post_modlog(chat, guild, &text).await;
+                } else {
+                    self.store.note_unmute_attempt(platform, guild, user)?;
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// DMs the member about an action if the server turned that on. Returns a note for the
+    /// moderator's reply when the DM couldn't be sent.
+    async fn notify(
+        &self,
+        chat: &dyn ChatAdapter,
+        guild: &str,
+        target: &str,
+        action: Action,
+        duration: Option<i64>,
+        reason: Option<&str>,
+    ) -> &'static str {
+        let on = matches!(
+            self.store.guild_setting(chat.platform(), guild, MOD_DM_KEY),
+            Ok(Some(v)) if v == "on"
+        );
+        if !on {
+            return "";
+        }
+        let server = chat
+            .guild_name(guild)
+            .await
+            .unwrap_or_else(|_| "the server".to_owned());
+        let Some(text) = action.dm(&server, duration, reason) else {
+            return "";
+        };
+        match chat.send_dm(target, &text).await {
+            Ok(()) => "",
+            Err(e) => {
+                tracing::info!(error = %e, user = target, "moderation DM not delivered");
+                " (I couldn't DM them.)"
+            }
+        }
+    }
+}
+
+/// Checks for due temp-bans and mutes every 30 s, starting right away (catching up after
+/// downtime).
 pub fn spawn_unban_scheduler(bot: Arc<Bot>, tools: Arc<ModTools>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(UNBAN_CHECK_EVERY);
@@ -426,6 +573,7 @@ pub fn spawn_unban_scheduler(bot: Arc<Bot>, tools: Arc<ModTools>) -> tokio::task
         loop {
             tick.tick().await;
             tools.lift_due_bans(&bot).await;
+            tools.lift_due_mutes(&bot).await;
         }
     })
 }
@@ -486,7 +634,13 @@ impl ModCommand {
                 "Usage: `{p}{n} <@user> <duration> [reason]`, for example `{p}{n} @someone 10m`. \
                  Up to 28 days."
             ),
-            Action::Kick | Action::Untimeout => format!("Usage: `{p}{n} <@user> [reason]`"),
+            Action::Mute => format!(
+                "Usage: `{p}{n} <@user> [duration] [reason]`. Uses the mute role \
+                 (`{p}set muterole`); without one it's a timeout and needs a duration."
+            ),
+            Action::Kick | Action::Untimeout | Action::Unmute => {
+                format!("Usage: `{p}{n} <@user> [reason]`")
+            }
         }
     }
 }
@@ -506,6 +660,8 @@ impl Command for ModCommand {
             Action::Unban => "Lift a ban (mods).",
             Action::Timeout => "Time a member out, up to 28 days (mods).",
             Action::Untimeout => "End a member's timeout (mods).",
+            Action::Mute => "Mute a member with the mute role, optionally for a while (mods).",
+            Action::Unmute => "Take the mute role (or a timeout) off a member (mods).",
         }
     }
 
@@ -519,9 +675,44 @@ impl Command for ModCommand {
         let (who, mut rest) = split_first(&ctx.args);
         let target = parse_user(who).ok_or_else(usage)?;
 
+        let platform = ctx.message.platform;
+        let mute_role = match self.action {
+            Action::Mute | Action::Unmute => {
+                self.tools
+                    .store
+                    .guild_setting(platform, &guild, MUTE_ROLE_KEY)?
+            }
+            _ => None,
+        };
         let mut duration = None;
         let mut days = 0u8;
         match self.action {
+            Action::Mute => {
+                // Optional duration; required (and capped) when it falls back to a timeout.
+                let (d, r) = split_first(rest);
+                if let Some(secs) = parse_duration(d) {
+                    let max = if mute_role.is_some() {
+                        MAX_TEMPBAN
+                    } else {
+                        MAX_TIMEOUT
+                    };
+                    if !(MIN_DURATION..=max).contains(&secs) {
+                        return Err(Error::Usage(format!(
+                            "The duration must be between 1 minute and {}.",
+                            format_duration(max)
+                        )));
+                    }
+                    duration = Some(secs);
+                    rest = r;
+                } else if mute_role.is_none() {
+                    return Err(Error::Usage(format!(
+                        "There's no mute role here, so `{p}mute` is a timeout and needs a \
+                         duration (up to 28 days), for example `{p}mute @someone 1h`. A server \
+                         owner can set one with `{p}set muterole <role>`.",
+                        p = ctx.prefix
+                    )));
+                }
+            }
             Action::TempBan | Action::Timeout => {
                 let (d, r) = split_first(rest);
                 let secs = parse_duration(d).ok_or_else(usage)?;
@@ -557,11 +748,14 @@ impl Command for ModCommand {
         }
 
         let chat = &*ctx.chat;
-        let platform = chat.platform();
         let store = &self.tools.store;
         let name = self.tools.name(chat, &target).await;
         let r = reason.as_deref();
         let expires_at = duration.map(|d| now() + d);
+        let dm_note = self
+            .tools
+            .notify(chat, &guild, &target, self.action, duration, r)
+            .await;
         let result = match self.action {
             Action::Warn => Ok(()),
             Action::Kick => chat.kick(&guild, &target, r).await,
@@ -570,6 +764,21 @@ impl Command for ModCommand {
             Action::Unban => chat.unban(&guild, &target, r).await,
             Action::Timeout => chat.timeout(&guild, &target, expires_at, r).await,
             Action::Untimeout => chat.timeout(&guild, &target, None, r).await,
+            Action::Mute => match &mute_role {
+                Some(role) => chat.add_role(&guild, &target, role).await,
+                None => chat.timeout(&guild, &target, expires_at, r).await,
+            },
+            Action::Unmute => match &mute_role {
+                Some(role) => {
+                    let removed = chat.remove_role(&guild, &target, role).await;
+                    // Also end a timeout from before the mute role was set (best effort).
+                    if removed.is_ok() {
+                        let _ = chat.timeout(&guild, &target, None, r).await;
+                    }
+                    removed
+                }
+                None => chat.timeout(&guild, &target, None, r).await,
+            },
         };
         if let Err(e) = result {
             if matches!(e, Error::Unsupported { .. }) {
@@ -617,6 +826,24 @@ impl Command for ModCommand {
             Action::Ban | Action::Unban => {
                 store.cancel_unban(platform, &guild, &target)?;
             }
+            // A new mute replaces a scheduled end; a mute without one is open-ended.
+            Action::Mute => {
+                store.cancel_unmute(platform, &guild, &target)?;
+                if let (Some(role), Some(at)) = (&mute_role, expires_at) {
+                    store.schedule_unmute(&ScheduledUnmute {
+                        platform,
+                        guild_id: guild.clone(),
+                        user_id: target.clone(),
+                        role_id: role.clone(),
+                        unmute_at: at,
+                        case_number: number,
+                        attempts: 0,
+                    })?;
+                }
+            }
+            Action::Unmute => {
+                store.cancel_unmute(platform, &guild, &target)?;
+            }
             _ => {}
         }
 
@@ -644,8 +871,22 @@ impl Command for ModCommand {
             }
             Action::Unban => format!("Unbanned **{name}**. (case #{number})"),
             Action::Untimeout => format!("Ended **{name}**'s timeout. (case #{number})"),
+            Action::Mute => match (duration, &mute_role) {
+                (Some(d), Some(_)) => format!(
+                    "Muted **{name}** for {}, until {}. (case #{number})",
+                    format_duration(d),
+                    format_time(platform, expires_at.unwrap_or_default())
+                ),
+                (None, _) => format!("Muted **{name}**. (case #{number})"),
+                (Some(d), None) => format!(
+                    "Timed out **{name}** for {} (no mute role set), until {}. (case #{number})",
+                    format_duration(d),
+                    format_time(platform, expires_at.unwrap_or_default())
+                ),
+            },
+            Action::Unmute => format!("Unmuted **{name}**. (case #{number})"),
         };
-        ctx.reply(&reply).await?;
+        ctx.reply(&format!("{reply}{dm_note}")).await?;
         Ok(())
     }
 }
@@ -945,6 +1186,25 @@ mod tests {
     use crate::permissions::MOD_ROLE;
     use std::collections::HashSet;
     use std::sync::Mutex;
+
+    #[test]
+    fn dm_texts() {
+        assert_eq!(
+            Action::TempBan
+                .dm("Srv", Some(3 * 86_400), Some("spam"))
+                .as_deref(),
+            Some(
+                "You were banned from **Srv** for 3d.
+Reason: spam"
+            )
+        );
+        assert_eq!(
+            Action::Mute.dm("Srv", None, None).as_deref(),
+            Some("You were muted in **Srv**.")
+        );
+        assert_eq!(Action::Unmute.dm("Srv", None, None), None);
+        assert_eq!(Action::Unban.dm("Srv", None, None), None);
+    }
 
     #[test]
     fn durations() {

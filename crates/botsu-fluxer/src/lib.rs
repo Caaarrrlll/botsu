@@ -64,10 +64,11 @@ impl FluxerChat {
         path: &str,
         body: Option<serde_json::Value>,
         reason: Option<&str>,
-    ) -> botsu_core::Result<()> {
+    ) -> botsu_core::Result<serde_json::Value> {
         let url = format!("{}{path}", self.http.base_url);
         let client = &self.http.client;
         let mut req = match method {
+            Method::Post => client.post(&url),
             Method::Put => client.put(&url),
             Method::Patch => client.patch(&url),
             Method::Delete => client.delete(&url),
@@ -85,11 +86,14 @@ impl FluxerChat {
             let text = resp.text().await.unwrap_or_default();
             return Err(err(format!("HTTP {status}: {text}")));
         }
-        Ok(())
+        // 204 and other empty bodies come back as Null.
+        let text = resp.text().await.unwrap_or_default();
+        Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
     }
 }
 
 enum Method {
+    Post,
     Put,
     Patch,
     Delete,
@@ -227,6 +231,23 @@ impl ChatAdapter for FluxerChat {
             .collect())
     }
 
+    async fn send_dm(&self, user_id: &str, content: &str) -> botsu_core::Result<()> {
+        // fluxer-rust has no DM helper: open (or reuse) the DM channel, then post in it.
+        let body = serde_json::json!({ "recipient_id": user_id });
+        let channel = self
+            .call(Method::Post, "/users/@me/channels", Some(body), None)
+            .await?;
+        let id = channel["id"]
+            .as_str()
+            .ok_or_else(|| err("opening a DM returned no channel ID"))?;
+        self.send_message(id, content).await.map(|_| ())
+    }
+
+    async fn guild_name(&self, guild_id: &str) -> botsu_core::Result<String> {
+        let guild = self.http.get_guild(guild_id).await.map_err(err)?;
+        Ok(guild.name.unwrap_or_else(|| guild_id.to_owned()))
+    }
+
     async fn guild_owner(&self, guild_id: &str) -> botsu_core::Result<Option<String>> {
         let guild = self.http.get_guild(guild_id).await.map_err(err)?;
         Ok(guild.owner_id)
@@ -279,7 +300,9 @@ impl ChatAdapter for FluxerChat {
         reason: Option<&str>,
     ) -> botsu_core::Result<()> {
         let path = format!("/guilds/{guild_id}/members/{user_id}");
-        self.call(Method::Delete, &path, None, reason).await
+        self.call(Method::Delete, &path, None, reason)
+            .await
+            .map(|_| ())
     }
 
     async fn ban(
@@ -294,7 +317,9 @@ impl ChatAdapter for FluxerChat {
             "reason": reason,
             "delete_message_days": delete_message_days.min(7),
         });
-        self.call(Method::Put, &path, Some(body), reason).await
+        self.call(Method::Put, &path, Some(body), reason)
+            .await
+            .map(|_| ())
     }
 
     async fn unban(
@@ -304,7 +329,9 @@ impl ChatAdapter for FluxerChat {
         reason: Option<&str>,
     ) -> botsu_core::Result<()> {
         let path = format!("/guilds/{guild_id}/bans/{user_id}");
-        self.call(Method::Delete, &path, None, reason).await
+        self.call(Method::Delete, &path, None, reason)
+            .await
+            .map(|_| ())
     }
 
     async fn bans(&self, guild_id: &str) -> botsu_core::Result<Vec<BanInfo>> {
@@ -347,7 +374,9 @@ impl ChatAdapter for FluxerChat {
             body["timeout_reason"] = r.into();
         }
         let path = format!("/guilds/{guild_id}/members/{user_id}");
-        self.call(Method::Patch, &path, Some(body), reason).await
+        self.call(Method::Patch, &path, Some(body), reason)
+            .await
+            .map(|_| ())
     }
 }
 

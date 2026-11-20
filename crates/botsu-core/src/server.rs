@@ -2,7 +2,7 @@
 //!
 //! | Command | Level |
 //! |---|---|
-//! | `set adminrole/modrole add/remove <role>`, `set roles`, `set modlog` | server owner |
+//! | `set adminrole/modrole add/remove <role>`, `set roles`, `set modlog`, `set muterole`, `set moddm` | server owner |
 //! | `cleanup messages/user/bots` | mod |
 //! | `addrole`, `removerole`, `announce` | admin |
 
@@ -15,7 +15,7 @@ use crate::adapter::{ChatAdapter, RoleInfo, ADMINISTRATOR};
 use crate::alerts::parse_channel;
 use crate::command::{Command, CommandContext, Group};
 use crate::error::{Error, Result};
-use crate::moderation::MODLOG_KEY;
+use crate::moderation::{MODLOG_KEY, MOD_DM_KEY, MUTE_ROLE_KEY};
 use crate::permissions::{Level, ADMIN_ROLE, MOD_ROLE};
 use crate::storage::{now, Store};
 
@@ -75,8 +75,78 @@ impl SetCommand {
              `{p}set adminrole add <role>` / `{p}set adminrole remove <role>`\n\
              `{p}set modrole add <role>` / `{p}set modrole remove <role>`\n\
              `{p}set roles`: show who counts as admin and mod here\n\
-             `{p}set modlog <#channel>` / `{p}set modlog off`: where moderation cases are posted"
+             `{p}set modlog <#channel>` / `{p}set modlog off`: where moderation cases are posted
+             `{p}set muterole <role>` / `{p}set muterole off`: the role `mute` gives (set its              channel permissions yourself)
+             `{p}set moddm on|off`: DM members when they're warned, kicked, banned, timed out or              muted (off by default)"
         )
+    }
+
+    async fn muterole(&self, ctx: &CommandContext, guild: &str, arg: &str) -> Result<()> {
+        let platform = ctx.message.platform;
+        let reply = if arg.is_empty() {
+            match self.store.guild_setting(platform, guild, MUTE_ROLE_KEY)? {
+                Some(r) => format!("The mute role is <@&{r}>."),
+                None => format!(
+                    "No mute role is set, so `{p}mute` is a timeout. `{p}set muterole <role>`                      sets one.",
+                    p = ctx.prefix
+                ),
+            }
+        } else if arg.eq_ignore_ascii_case("off") {
+            self.store
+                .set_guild_setting(platform, guild, MUTE_ROLE_KEY, None)?;
+            "No mute role any more: `mute` is a timeout again. Members who have the role keep it."
+                .to_owned()
+        } else {
+            let role = resolve_role(ctx, guild, arg).await?;
+            if role.id == guild {
+                return Err(Error::Usage("@everyone can't be the mute role.".into()));
+            }
+            if role.permissions & ADMINISTRATOR != 0 {
+                return Err(Error::Usage(format!(
+                    "**{}** has Administrator; pick a role without it.",
+                    role.name
+                )));
+            }
+            self.store
+                .set_guild_setting(platform, guild, MUTE_ROLE_KEY, Some(&role.id))?;
+            format!(
+                "`mute` now gives **{}**. Make sure it denies Send Messages (and Speak) in the                  channels, and that my highest role is above it.",
+                role.name
+            )
+        };
+        ctx.reply(&reply).await?;
+        Ok(())
+    }
+
+    async fn moddm(&self, ctx: &CommandContext, guild: &str, arg: &str) -> Result<()> {
+        let platform = ctx.message.platform;
+        let reply = match arg.to_lowercase().as_str() {
+            "on" => {
+                self.store
+                    .set_guild_setting(platform, guild, MOD_DM_KEY, Some("on"))?;
+                "Members will get a DM saying what happened and why. (Some have DMs closed; the                  action still goes ahead.)"
+            }
+            "off" => {
+                self.store
+                    .set_guild_setting(platform, guild, MOD_DM_KEY, None)?;
+                "Members won't get a DM about moderation actions."
+            }
+            "" => {
+                if self
+                    .store
+                    .guild_setting(platform, guild, MOD_DM_KEY)?
+                    .as_deref()
+                    == Some("on")
+                {
+                    "Moderation DMs are on."
+                } else {
+                    "Moderation DMs are off."
+                }
+            }
+            _ => return Err(Error::Usage(Self::usage(&ctx.prefix))),
+        };
+        ctx.reply(reply).await?;
+        Ok(())
     }
 
     async fn modlog(&self, ctx: &CommandContext, guild: &str, arg: &str) -> Result<()> {
@@ -114,7 +184,7 @@ impl Command for SetCommand {
     }
 
     fn help(&self) -> &'static str {
-        "Choose admin and mod roles and the mod-log channel (server owner)."
+        "Choose admin and mod roles, the mod-log channel, the mute role and mod DMs (server owner)."
     }
 
     fn level(&self) -> Level {
@@ -132,6 +202,14 @@ impl Command for SetCommand {
         if what == "modlog" {
             let arg = ctx.args.trim_start()["modlog".len()..].to_owned();
             return self.modlog(&ctx, &guild, &arg).await;
+        }
+        if what == "muterole" || what == "moddm" {
+            let arg = ctx.args.trim_start()[what.len()..].trim().to_owned();
+            return if what == "muterole" {
+                self.muterole(&ctx, &guild, &arg).await
+            } else {
+                self.moddm(&ctx, &guild, &arg).await
+            };
         }
         if what == "roles" {
             let configured = self.store.guild_roles(platform, &guild)?;

@@ -172,6 +172,23 @@ impl ChatAdapter for DiscordChat {
             .collect())
     }
 
+    async fn send_dm(&self, user_id: &str, content: &str) -> botsu_core::Result<()> {
+        let channel = UserId::new(snowflake(user_id)?)
+            .create_dm_channel(&self.http)
+            .await
+            .map_err(err)?;
+        channel.id.say(&self.http, content).await.map_err(err)?;
+        Ok(())
+    }
+
+    async fn guild_name(&self, guild_id: &str) -> botsu_core::Result<String> {
+        let guild = GuildId::new(snowflake(guild_id)?)
+            .to_partial_guild(&self.http)
+            .await
+            .map_err(err)?;
+        Ok(guild.name)
+    }
+
     async fn guild_owner(&self, guild_id: &str) -> botsu_core::Result<Option<String>> {
         let guild = GuildId::new(snowflake(guild_id)?)
             .to_partial_guild(&self.http)

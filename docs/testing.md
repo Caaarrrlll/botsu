@@ -266,6 +266,10 @@ Fluxer's bulk-delete limits and role API are untested; note anything odd.
 !mod unban <user ID> [reason]
 !mod timeout <@user> <duration> [reason]   ← up to 28 days
 !mod untimeout <@user> [reason]
+!mod mute <@user> [duration] [reason]      ← mute role; no role set: a timeout (duration needed)
+!mod unmute <@user> [reason]
+!set muterole <role> | off     ← server owner; give the role "deny Send Messages" yourself
+!set moddm on | off            ← server owner; DM members about actions against them
 !mod case <n>   !mod cases <@user>   !mod reason <n> <text>   !mod bans
 ```
 
@@ -288,6 +292,10 @@ friend's alt) as the target.
 | `!mod tempban @test 2m test` → the ban is lifted about 2 minutes later, with an automatic unban case | | |
 | `!mod tempban @test 5m`, restart the container, wait: the ban is still lifted on time | | |
 | `!mod case 2`, `!mod cases @test`, `!mod reason 2 new text` (another mod's case: admins only) | | |
+| No mute role: `!mod mute @test` asks for a duration; `!mod mute @test 5m` times them out | | |
+| `!set muterole Muted`; `!mod mute @test 2m` gives the role, which is taken off ~2 minutes later with an automatic unmute case | | |
+| `!mod mute @test` (no duration) stays until `!mod unmute @test` | | |
+| `!set moddm on`; warn/kick/ban the test account: it gets a DM with the server name and reason first. With its DMs closed, the reply says "(I couldn't DM them.)" | | |
 
 Fluxer's moderation endpoints are untested against the instance; note anything odd.
 

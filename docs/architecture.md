@@ -63,6 +63,7 @@ once connected, and pollers look up `bot.chat(platform)` to post.
 | `recent_messages(channel, before, limit)` | no | `cleanup` |
 | `bot_user_id`, `user_name` | no | moderation (hierarchy check, names in the mod-log) |
 | `kick`, `ban`, `unban`, `bans`, `timeout` | no | moderation (phase 5); reasons go to the audit log |
+| `send_dm(user, text)`, `guild_name` | no | moderation DMs (`set moddm on`). Fluxer opens the DM with `POST /users/@me/channels` |
 
 Optional methods have default bodies that return `Error::Unsupported`, so a platform that can't
 do something answers "not supported on X" instead of failing oddly. Add methods as features need
@@ -299,14 +300,24 @@ bot was down are lifted right away. If lifting fails it checks the ban list (unb
 drop the row) and otherwise retries for 30 minutes, then reports to the mod-log. A permanent ban
 or an unban cancels the schedule. Timeouts expire on the platform (max 28 days, Discord's limit).
 
+**Mutes** give the server's mute role (`set muterole`; its channel permissions are up to the
+server). With a duration, a `scheduled_unmutes` row is lifted by the same 30 s task; if removing
+the role fails and the member no longer has it (or left), the row is dropped, otherwise retried
+like temp-bans. A new mute replaces the schedule; `unmute` cancels it and also clears a timeout.
+Without a mute role, `mute` is a timeout (duration required, max 28 days).
+
+**DMs** (`set moddm on`): before warn, kick, ban, temp-ban, timeout and mute the member gets "You
+were … in **server** [for …]. Reason: …". Sent before the action because after a kick or ban the
+bot may share no server with them; a DM that fails only adds "(I couldn't DM them.)" to the reply.
+
 ### `mod_cases` (migration 4)
 
 | Column | Type | Meaning |
 |---|---|---|
 | `platform`, `guild_id` | TEXT | Server |
 | `number` | INTEGER | Case number, per platform and server (`MAX + 1`) |
-| `action` | TEXT | `warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`, `untimeout` |
-| `target_id`, `moderator_id` | TEXT | Users; moderator `''` = botsu (temp-ban ended) |
+| `action` | TEXT | `warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`, `untimeout`, `mute`, `unmute` |
+| `target_id`, `moderator_id` | TEXT | Users; moderator `''` = botsu (temp-ban or mute ended) |
 | `reason` | TEXT? | Changed with `reason <n>` |
 | `created_at` | INTEGER | Unix seconds |
 | `expires_at` | INTEGER? | Temp-ban or timeout end |
@@ -319,9 +330,14 @@ Primary key `(platform, guild_id, number)`; index on `(platform, guild_id, targe
 `(platform, guild_id, user_id)` primary key, `unban_at`, `case_number` (the tempban case),
 `attempts` (failed lifts so far).
 
+### `scheduled_unmutes` (migration 6)
+
+Like `scheduled_unbans`, plus `role_id` (the mute role given, removed when `unmute_at` is due).
+
 ### `guild_settings` (migration 4)
 
-Key/value per `(platform, guild_id, key)`. Keys: `modlog_channel`, `music_volume`.
+Key/value per `(platform, guild_id, key)`. Keys: `modlog_channel`, `music_volume`, `mute_role`,
+`mod_dm` (`on` or absent).
 
 ## Configuration
 

@@ -95,6 +95,17 @@ const MIGRATIONS: &[&str] = &[
     // 5: custom alert text and a role (or @everyone/@here) to mention, per subscription
     "ALTER TABLE subscriptions ADD COLUMN message TEXT;  -- NULL = the default text
     ALTER TABLE subscriptions ADD COLUMN mention TEXT;  -- role ID | 'everyone' | 'here' | NULL",
+    // 6: mutes with the server's mute role that end by themselves
+    "CREATE TABLE scheduled_unmutes (
+        platform    TEXT NOT NULL,
+        guild_id    TEXT NOT NULL,
+        user_id     TEXT NOT NULL,
+        role_id     TEXT NOT NULL,      -- the mute role given (removed when due)
+        unmute_at   INTEGER NOT NULL,
+        case_number INTEGER NOT NULL,   -- the mute case
+        attempts    INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (platform, guild_id, user_id)
+    );",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,6 +212,18 @@ pub struct ScheduledUnban {
     pub guild_id: String,
     pub user_id: String,
     pub unban_at: i64,
+    pub case_number: i64,
+    pub attempts: i64,
+}
+
+/// A mute (by role) waiting to be lifted.
+#[derive(Debug, Clone)]
+pub struct ScheduledUnmute {
+    pub platform: Platform,
+    pub guild_id: String,
+    pub user_id: String,
+    pub role_id: String,
+    pub unmute_at: i64,
     pub case_number: i64,
     pub attempts: i64,
 }
@@ -699,6 +722,82 @@ impl Store {
         Ok(())
     }
 
+    pub fn schedule_unmute(&self, u: &ScheduledUnmute) -> DbResult<()> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO scheduled_unmutes
+               (platform, guild_id, user_id, role_id, unmute_at, case_number, attempts)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+            params![
+                platform_str(u.platform),
+                u.guild_id,
+                u.user_id,
+                u.role_id,
+                u.unmute_at,
+                u.case_number
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Returns true if a scheduled unmute was removed.
+    pub fn cancel_unmute(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        user_id: &str,
+    ) -> DbResult<bool> {
+        let n = self.conn().execute(
+            "DELETE FROM scheduled_unmutes WHERE platform = ?1 AND guild_id = ?2 AND user_id = ?3",
+            params![platform_str(platform), guild_id, user_id],
+        )?;
+        Ok(n > 0)
+    }
+
+    pub fn due_unmutes(&self, at: i64) -> DbResult<Vec<ScheduledUnmute>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT platform, guild_id, user_id, role_id, unmute_at, case_number, attempts
+             FROM scheduled_unmutes WHERE unmute_at <= ?1 ORDER BY unmute_at",
+        )?;
+        let rows = stmt.query_map(params![at], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                ScheduledUnmute {
+                    platform: Platform::Discord,
+                    guild_id: r.get(1)?,
+                    user_id: r.get(2)?,
+                    role_id: r.get(3)?,
+                    unmute_at: r.get(4)?,
+                    case_number: r.get(5)?,
+                    attempts: r.get(6)?,
+                },
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (platform, mut u) = row?;
+            if let Some(p) = parse_platform(&platform) {
+                u.platform = p;
+                out.push(u);
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn note_unmute_attempt(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        user_id: &str,
+    ) -> DbResult<()> {
+        self.conn().execute(
+            "UPDATE scheduled_unmutes SET attempts = attempts + 1
+             WHERE platform = ?1 AND guild_id = ?2 AND user_id = ?3",
+            params![platform_str(platform), guild_id, user_id],
+        )?;
+        Ok(())
+    }
+
     pub fn guild_setting(
         &self,
         platform: Platform,
@@ -882,6 +981,31 @@ mod tests {
             .all_subscriptions(AlertKind::YouTube)
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn scheduled_unmutes() {
+        let store = Store::open_in_memory().unwrap();
+        let u = ScheduledUnmute {
+            platform: Platform::Fluxer,
+            guild_id: "g".into(),
+            user_id: "u".into(),
+            role_id: "r".into(),
+            unmute_at: 100,
+            case_number: 3,
+            attempts: 0,
+        };
+        store.schedule_unmute(&u).unwrap();
+        assert!(store.due_unmutes(99).unwrap().is_empty());
+        let due = store.due_unmutes(100).unwrap();
+        assert_eq!((due.len(), due[0].role_id.as_str()), (1, "r"));
+        assert_eq!(due[0].platform, Platform::Fluxer);
+        store
+            .note_unmute_attempt(Platform::Fluxer, "g", "u")
+            .unwrap();
+        assert_eq!(store.due_unmutes(100).unwrap()[0].attempts, 1);
+        assert!(store.cancel_unmute(Platform::Fluxer, "g", "u").unwrap());
+        assert!(!store.cancel_unmute(Platform::Fluxer, "g", "u").unwrap());
     }
 
     #[test]

@@ -25,6 +25,9 @@ Only server configuration moves, never data about users.
 | Admin and mod roles | `guild_roles` | yes | permissions setup |
 | Mod-log channel | `guild_settings` `modlog_channel` | yes | |
 | Music volume | `guild_settings` `music_volume` | yes | |
+| Mute role, mod DMs on/off | `guild_settings` `mute_role`, `mod_dm` | yes | mute role is mapped like the admin/mod roles |
+| Custom alert text and mention | `subscriptions.message`, `.mention` | yes | the mention role is mapped like the others |
+| Scheduled unmutes | `scheduled_unmutes` | **no** | about users |
 | Who added a subscription | `subscriptions.created_by` | **no** | user ID; the importer becomes the creator |
 | Cases, warnings | `mod_cases` | **no** | about users; IDs don't carry across platforms anyway |
 | Pending temp-bans | `scheduled_unbans` | **no** | about users |
@@ -164,6 +167,8 @@ enum Portable { Channel, Role, Value, Never }
 const SETTINGS: &[(&str, Portable)] = &[
     (MODLOG_KEY, Portable::Channel),
     (music::VOLUME_KEY, Portable::Value),
+    (MUTE_ROLE_KEY, Portable::Role),
+    (MOD_DM_KEY, Portable::Value),
 ];
 ```
 
@@ -190,6 +195,5 @@ is missing from the registry, so each new setting has to be classified when it's
   by hand? (The current plan keeps IDs too, since names aren't unique.)
 - Should an import into a server that already has subscriptions warn when the same source
   would end up posting to two channels? It's allowed today.
-- If another server setting is added before this is built (a custom alert message or a role to
-  mention per subscription, both on the roadmap as Red parity), it goes in the subscription
-  entries and needs a role mapping too.
+- Custom alert text and mentions now exist (migration 5): `message` copies as is, `mention`
+  goes through the role mapping (`everyone`/`here` copy as is).

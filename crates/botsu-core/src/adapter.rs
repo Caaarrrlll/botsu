@@ -162,6 +162,24 @@ pub trait ChatAdapter: Send + Sync {
         })
     }
 
+    /// Sends a direct message to a user (moderation notices). Fails if they don't accept DMs.
+    async fn send_dm(&self, user_id: &str, content: &str) -> Result<()> {
+        let _ = (user_id, content);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "direct messages",
+        })
+    }
+
+    /// A server's display name.
+    async fn guild_name(&self, guild_id: &str) -> Result<String> {
+        let _ = guild_id;
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "guild_name",
+        })
+    }
+
     /// The user ID of a server's owner, for "server owner may do this" permission checks.
     async fn guild_owner(&self, guild_id: &str) -> Result<Option<String>> {
         let _ = guild_id;
