@@ -149,6 +149,7 @@ async fn main() {
     let config = FluxerConfig {
         token,
         endpoint: endpoint(),
+        invite_admin: false,
     };
     let (http, bot_id, _) = match connect_rest(&config).await {
         Ok(c) => c,
