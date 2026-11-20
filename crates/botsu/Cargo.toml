@@ -15,3 +15,26 @@ reqwest.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+# `cargo deb -p botsu` (release workflow). Doesn't start or enable the service on install: it
+# needs a token first (docs/install-linux.md).
+[package.metadata.deb]
+name = "botsu"
+maintainer = "Caaarrrlll <https://github.com/Caaarrrlll/botsu/issues>"
+copyright = "Caaarrrlll"
+extended-description = """\
+Lean self-hosted chat bot for Discord and Fluxer: YouTube and Twitch alerts, moderation, server \
+tools and music. Settings go in /etc/botsu/botsu.env (example in /usr/share/doc/botsu)."""
+section = "net"
+priority = "optional"
+# $auto adds the shared libraries (glib, libva, opus) the binary links against.
+depends = "$auto, ca-certificates"
+# Music: ffmpeg decodes, Deno (not packaged in Debian) runs yt-dlp's YouTube challenge solver.
+recommends = "ffmpeg"
+assets = [
+    ["target/release/botsu", "usr/bin/", "755"],
+    # A copy of deploy/systemd/botsu.service with ExecStart=/usr/bin/botsu (made by the workflow).
+    ["target/release/botsu.service", "lib/systemd/system/botsu.service", "644"],
+    ["../../.env.example", "usr/share/doc/botsu/botsu.env.example", "644"],
+    ["../../README.md", "usr/share/doc/botsu/README.md", "644"],
+]

@@ -9,6 +9,8 @@ schema, adapter trait or alert rules change.
 - **Rust from the start**, not Python first. Accepting churn from young platform libraries.
 - **Discord and Fluxer are both required.** Stoat is a bonus only.
 - Docker image must work for anyone (not Unraid-specific); native Linux (systemd) is documented too.
+- Releases (`v*` tags, .github/workflows/release.yml): Linux .tar.gz + .deb (cargo-deb metadata in
+  crates/botsu/Cargo.toml) and Windows .zip. Guides: docs/install-linux.md, docs/install-windows.md.
 - Push to `master` publishes the image to Docker Hub (phase 3).
 
 ## Layout

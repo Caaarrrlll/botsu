@@ -56,7 +56,10 @@ Getting tokens and testing against live servers: [docs/testing.md](docs/testing.
 Image: `caaarrrlll/botsu:latest` on Docker Hub, built and published by GitHub Actions on every push
 to `master` once the checks pass (`sha-<commit>` tags too, for rollbacks).
 Guides: [Unraid](docs/install-unraid.md) (template) · [any Docker host](docs/install-docker.md)
-(`docker run` / Compose) · [native Linux](docs/install-linux.md) (systemd, no containers).
+(`docker run` / Compose) · [native Linux](docs/install-linux.md) (systemd; `.deb`, `.tar.gz` or
+from source on Debian/Ubuntu, Fedora, Arch) · [Windows](docs/install-windows.md). Prebuilt
+binaries are on the [releases page](https://github.com/Caaarrrlll/botsu/releases) for each
+`vX.Y.Z` tag.
 
 Any Docker host:
 
