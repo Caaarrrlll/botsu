@@ -180,9 +180,9 @@ is skipped and listed. Nothing already published or already live is posted.
 
 | Test | Discord | Fluxer |
 |---|---|---|
-| Any member can `!tube add`, `!tube list` and `!tube remove` | | |
+| Any member can `!tube add`, `!tube list` and `!tube remove` | | `add` ✅ 2026-11-20 |
 | Non-owner `!tube import` and `!tube shorts` get "Only bot owners can do that" with their ID | | |
-| `!tube add @SomeChannel` replies with the channel name and latest video, no flood of old videos | | |
+| `!tube add @SomeChannel` replies with the channel name and latest video, no flood of old videos | | ✅ 2026-11-20 (IDs and @handle) |
 | A new Short is not posted; after `!tube shorts <name> on` it is | | |
 | A live stream posts "is live on YouTube"; a scheduled one posts only when it starts | | |
 | `!tube add <link> #other-channel` posts the notice in the other channel | | |
