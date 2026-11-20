@@ -70,7 +70,7 @@ docs/roadmap.md up to date as work lands.
 
 ## fluxer-rust 0.2.1 notes (pinned with `=`; vendored with patches in vendor/fluxer-rust, see vendor/README.md)
 - Patches: `Guild.voice_states` (GUILD_CREATE), `FluxerVoiceConnection::play_input` (ffmpeg with reconnect
-  flags, stdin input, errors returned). Before bumping, port these or drop them if upstream has them.
+  flags, stdin input, errors returned, pause flag, volume). Before bumping, port these or drop them if upstream has them.
 - No interactions/slash commands: prefix commands only on Fluxer.
 - API URL comes from discovery: `<instance>/.well-known/fluxer` (domain root) → `endpoints.api_public`
   + `/v1`. botsu fetches it itself (`discover` in botsu-fluxer) because fluxer-rust's

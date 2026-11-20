@@ -288,6 +288,7 @@ Fluxer's moderation endpoints are untested against the instance; note anything o
 !music play <search words or link>   ← joins your voice channel; YouTube links, playlists, other sites
 !music skip    !music pause   !music resume   !music stop    !music leave
 !music queue   !music now     !music remove <n>   !music clear   !music shuffle
+!music volume [0-150]   ← no number: shows it; saved per server
 !music join
 !music test [url]    !music where    !music update     ← bot owners (tone test, voice states, yt-dlp)
 ```
@@ -306,6 +307,7 @@ with its version. It's saved in `/data/bin`, so later starts skip the download.
 | `!music play never gonna give you up` joins and posts "Now playing …"; you hear it | | |
 | Two more `!music play …`: "Queued … at position n"; `!music queue` lists them | | |
 | `!music pause`, wait a minute, `!music resume`: it carries on where it stopped; `!music now` says "(paused)" while paused | | ✅ |
+| `!music volume 30` while playing: quieter right away; the next track is quiet too; `!music volume` says 30%; still 30% after a container restart; `!music volume 100` back to normal | | |
 | `!music skip` moves to the next track; the next one starts by itself when one ends | | |
 | A playlist link queues its tracks ("Queued n tracks from the playlist") | | |
 | `!music remove 2`, `!music shuffle`, `!music clear`, `!music stop` | | |

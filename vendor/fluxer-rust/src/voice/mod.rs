@@ -97,12 +97,14 @@ impl FluxerVoiceConnection {
     /// another process, such as `yt-dlp -o -`). Unlike [`play_music`](Self::play_music): network
     /// inputs get reconnect flags, ffmpeg's stderr is drained while playing (a full pipe would
     /// stall it), errors are returned from the task instead of posted to a channel, and setting
-    /// `paused` holds playback (ffmpeg then blocks on its full output pipe).
+    /// `paused` holds playback (ffmpeg then blocks on its full output pipe). `volume` is in
+    /// percent (100 = unchanged), read for every frame so changes apply right away.
     pub fn play_input(
         &self,
         input: &str,
         stdin: Option<Stdio>,
         paused: Arc<std::sync::atomic::AtomicBool>,
+        volume: Arc<std::sync::atomic::AtomicU16>,
     ) -> Result<tokio::task::JoinHandle<Result<(), String>>, Box<dyn std::error::Error + Send + Sync>>
     {
         let mut cmd = Command::new("ffmpeg");
@@ -141,9 +143,20 @@ impl FluxerVoiceConnection {
                 }
                 match stdout.read_exact(&mut buffer).await {
                     Ok(_) => {
+                        let gain =
+                            i32::from(volume.load(std::sync::atomic::Ordering::Relaxed));
                         let samples: Vec<i16> = buffer
                             .chunks_exact(2)
                             .map(|c| i16::from_le_bytes([c[0], c[1]]))
+                            .map(|s| {
+                                if gain == 100 {
+                                    s
+                                } else {
+                                    (i32::from(s) * gain / 100)
+                                        .clamp(i32::from(i16::MIN), i32::from(i16::MAX))
+                                        as i16
+                                }
+                            })
                             .collect();
                         if let Err(e) = source
                             .capture_frame(&AudioFrame {

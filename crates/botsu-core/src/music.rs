@@ -9,6 +9,9 @@
 //!
 //! Anyone in the bot's voice channel can control the queue; mods can from anywhere. The voice
 //! test tools (`test`, `where`) and `update` (yt-dlp) are for bot owners.
+//!
+//! The volume (`music volume`) is kept per server in `guild_settings` and handed to the adapter
+//! whenever the bot joins a voice channel.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -21,7 +24,8 @@ use crate::adapter::{ChatAdapter, Platform};
 use crate::command::{Command, CommandContext, Group};
 use crate::error::{Error, Result};
 use crate::permissions::Level;
-use crate::voice::{spawn_idle_watch, test_tone, AudioInput, VoiceAdapter};
+use crate::storage::Store;
+use crate::voice::{spawn_idle_watch, test_tone, AudioInput, VoiceAdapter, VOLUME_MAX};
 use crate::ytdlp::{is_url, YtDlp};
 
 /// Most tracks taken from one playlist link, and most queued per server.
@@ -32,6 +36,9 @@ const POLL: Duration = Duration::from_secs(1);
 /// A track only counts as finished after this long, so a slow start isn't taken as the end.
 const START_GRACE: Duration = Duration::from_secs(5);
 const MAX_MESSAGE: usize = 1900;
+/// `guild_settings` key for the volume in percent.
+pub const VOLUME_KEY: &str = "music_volume";
+const VOLUME_DEFAULT: u16 = 100;
 
 #[derive(Debug, Clone)]
 pub struct Track {
@@ -83,15 +90,21 @@ struct Guild {
 pub struct Music {
     voices: Vec<Arc<dyn VoiceAdapter>>,
     ytdlp: Arc<YtDlp>,
+    store: Arc<Store>,
     guilds: Mutex<HashMap<Key, Guild>>,
     watching: Arc<Mutex<HashSet<(Platform, String)>>>,
 }
 
 impl Music {
-    pub fn new(voices: Vec<Arc<dyn VoiceAdapter>>, ytdlp: Arc<YtDlp>) -> Arc<Self> {
+    pub fn new(
+        voices: Vec<Arc<dyn VoiceAdapter>>,
+        ytdlp: Arc<YtDlp>,
+        store: Arc<Store>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             voices,
             ytdlp,
+            store,
             guilds: Mutex::default(),
             watching: Arc::default(),
         })
@@ -99,6 +112,19 @@ impl Music {
 
     fn guilds(&self) -> std::sync::MutexGuard<'_, HashMap<Key, Guild>> {
         self.guilds.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// The server's saved volume in percent (100 if unset or unreadable).
+    fn volume(&self, key: &Key) -> u16 {
+        match self.store.guild_setting(key.0, &key.1, VOLUME_KEY) {
+            Ok(v) => v
+                .and_then(|v| v.parse().ok())
+                .map_or(VOLUME_DEFAULT, |v: u16| v.min(VOLUME_MAX)),
+            Err(e) => {
+                tracing::warn!(error = %e, "couldn't read the music volume");
+                VOLUME_DEFAULT
+            }
+        }
     }
 
     fn voice(&self, platform: Platform) -> Result<Arc<dyn VoiceAdapter>> {
@@ -321,6 +347,7 @@ enum Sub {
     Remove,
     Clear,
     Shuffle,
+    Volume,
     Join,
     Leave,
     Test,
@@ -329,7 +356,7 @@ enum Sub {
 }
 
 impl Sub {
-    const ALL: [Sub; 15] = [
+    const ALL: [Sub; 16] = [
         Sub::Play,
         Sub::Skip,
         Sub::Pause,
@@ -340,6 +367,7 @@ impl Sub {
         Sub::Remove,
         Sub::Clear,
         Sub::Shuffle,
+        Sub::Volume,
         Sub::Join,
         Sub::Leave,
         Sub::Test,
@@ -432,6 +460,10 @@ impl MusicCommand {
             ));
         };
         here.voice.join(&here.guild, &channel).await?;
+        let volume = self.music.volume(&here.key);
+        if let Err(e) = here.voice.set_volume(&here.guild, volume).await {
+            tracing::warn!(error = %e, volume, "couldn't apply the saved volume");
+        }
         spawn_idle_watch(
             here.voice.clone(),
             here.guild.clone(),
@@ -493,6 +525,42 @@ impl MusicCommand {
         Ok(())
     }
 
+    /// `volume` shows it; `volume <0-150>` sets it (people listening, or mods).
+    async fn volume(&self, ctx: &CommandContext, here: &Here) -> Result<()> {
+        let arg = ctx.args.trim().trim_end_matches('%');
+        if arg.is_empty() {
+            let v = self.music.volume(&here.key);
+            ctx.reply(&format!("Volume: {v}%.")).await?;
+            return Ok(());
+        }
+        let v: u16 = arg
+            .parse()
+            .ok()
+            .filter(|v| *v <= VOLUME_MAX)
+            .ok_or_else(|| {
+                Error::Usage(format!(
+                    "Usage: `{}volume <0-{VOLUME_MAX}>` (100 = normal)",
+                    ctx.prefix
+                ))
+            })?;
+        self.require_listener(ctx, here).await?;
+        if here.voice.is_connected(&here.guild).await {
+            here.voice.set_volume(&here.guild, v).await?;
+        }
+        let value = (v != VOLUME_DEFAULT).then(|| v.to_string());
+        self.music
+            .store
+            .set_guild_setting(here.key.0, &here.guild, VOLUME_KEY, value.as_deref())
+            .map_err(|e| Error::internal("saving the volume", e))?;
+        let note = if v > 100 {
+            " Above 100 it may distort."
+        } else {
+            ""
+        };
+        ctx.reply(&format!("Volume set to {v}%.{note}")).await?;
+        Ok(())
+    }
+
     async fn queue(&self, ctx: &CommandContext, here: &Here) -> Result<()> {
         let (current, queue) = self.music.snapshot(&here.key);
         let Some(current) = current else {
@@ -538,6 +606,7 @@ impl Command for MusicCommand {
             Sub::Remove => "remove",
             Sub::Clear => "clear",
             Sub::Shuffle => "shuffle",
+            Sub::Volume => "volume",
             Sub::Join => "join",
             Sub::Leave => "leave",
             Sub::Test => "test",
@@ -560,6 +629,9 @@ impl Command for MusicCommand {
             Sub::Remove => "Remove a song from the queue by its number.",
             Sub::Clear => "Empty the queue (the current song keeps playing).",
             Sub::Shuffle => "Shuffle the queue.",
+            Sub::Volume => {
+                "Show or set the volume for this server: 0 to 150 percent (100 = normal)."
+            }
             Sub::Join => "Join your voice channel.",
             Sub::Leave => "Stop and leave the voice channel.",
             Sub::Test => "Play a test tone or a direct audio link (bot owners).",
@@ -678,6 +750,7 @@ impl Command for MusicCommand {
                     .unwrap_or(0);
                 ctx.reply(&format!("Shuffled {n} track(s).")).await?;
             }
+            Sub::Volume => self.volume(&ctx, &here).await?,
             Sub::Join => {
                 self.connect(&ctx, &here).await?;
                 ctx.reply("Here. I leave after 10 minutes without sound.")
@@ -770,5 +843,31 @@ mod tests {
         let mut sorted = v.clone();
         sorted.sort();
         assert_eq!(sorted, (0..50).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn saved_volume() {
+        let store = Arc::new(Store::open_in_memory().unwrap());
+        let ytdlp = YtDlp::new(
+            &std::env::temp_dir(),
+            Some("yt-dlp".into()),
+            reqwest::Client::new(),
+        );
+        let music = Music::new(Vec::new(), ytdlp, store.clone());
+        let key = (Platform::Fluxer, "g".to_owned());
+        assert_eq!(music.volume(&key), 100);
+        let set = |v: &str| {
+            store
+                .set_guild_setting(Platform::Fluxer, "g", VOLUME_KEY, Some(v))
+                .unwrap()
+        };
+        set("40");
+        assert_eq!(music.volume(&key), 40);
+        set("900"); // out of range: capped
+        assert_eq!(music.volume(&key), VOLUME_MAX);
+        set("loud"); // unreadable: default
+        assert_eq!(music.volume(&key), 100);
+        // Other platforms' servers with the same ID are separate.
+        assert_eq!(music.volume(&(Platform::Discord, "g".to_owned())), 100);
     }
 }
