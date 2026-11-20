@@ -345,6 +345,38 @@ A long pause can make YouTube drop the download (yt-dlp waits on a full pipe whi
 track stops right after a long pause, that's why. A long track cutting off early is also worth
 watching for.
 
+## 9. Settings export / import
+
+### Commands
+
+```
+!admin export                      ← admins: posts botsu-<platform>-<server>-<date>.json
+!admin import                      ← server owner, with that file attached: shows a preview
+  --replace                          (same message) remove this server's alerts, roles, settings first
+  map old-name = #channel            (same message, one per line) when names don't match
+  map Old Role = @Role
+!admin import confirm              ← within 10 minutes: applies the preview
+!admin import cancel
+```
+
+The file holds alerts (with custom text, mentions, Shorts), admin/mod roles, mod log, mute role,
+mod DMs, volume and embeds. No user data. Channels and roles are matched by name on the other
+server (channels ignore case, `#`, spaces, `-` and `_`).
+
+### Checklist
+
+| Test | Result |
+|---|---|
+| `!admin export` on the Discord test server posts a `.json` file; it opens as readable JSON | |
+| `!admin import` + that file on the Fluxer test server: the preview lists each alert, role and setting with "add", "already there" or "not found" | |
+| A non-owner admin gets "You need to be the server owner" for `import` | |
+| `map` lines fix a channel and a role that didn't match | |
+| `!admin import confirm`: each target channel gets one notice; `!tube list` / `!twitch list` / `!set roles` show the imported setup, with custom text and mentions | |
+| Nothing old is posted after the import (wait a poll or two) | |
+| Importing the same file again: everything "already there" | |
+| `--replace` removes an alert that isn't in the file | |
+| The other direction: Fluxer export → Discord import | |
+
 ## Troubleshooting
 
 | Symptom | Likely cause |

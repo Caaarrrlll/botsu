@@ -233,6 +233,47 @@ impl ChatAdapter for FluxerChat {
             .collect())
     }
 
+    async fn send_file(
+        &self,
+        channel_id: &str,
+        content: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> botsu_core::Result<String> {
+        let file = fluxer::model::AttachmentFile {
+            filename: filename.to_owned(),
+            data,
+            content_type: None,
+        };
+        let content = (!content.is_empty()).then_some(content);
+        let msg = self
+            .http
+            .send_files(channel_id, vec![file], content)
+            .await
+            .map_err(err)?;
+        Ok(msg.id)
+    }
+
+    async fn text_channels(
+        &self,
+        guild_id: &str,
+    ) -> botsu_core::Result<Vec<botsu_core::ChannelInfo>> {
+        let channels = self.http.get_guild_channels(guild_id).await.map_err(err)?;
+        let mut out: Vec<botsu_core::ChannelInfo> = channels
+            .into_iter()
+            // 0 = text, 5 = announcement.
+            .filter(|c| matches!(c.kind, Some(0 | 5)))
+            .filter_map(|c| {
+                Some(botsu_core::ChannelInfo {
+                    name: c.name?,
+                    id: c.id,
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
     async fn send_embed(
         &self,
         channel_id: &str,
@@ -710,6 +751,18 @@ fn translate(msg: Message) -> Option<IncomingMessage> {
             name: msg.author.username,
             is_bot: msg.author.bot.unwrap_or(false),
         },
+        attachments: msg
+            .attachments
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|a| {
+                Some(botsu_core::Attachment {
+                    url: a.url?,
+                    filename: a.filename.unwrap_or_default(),
+                    size: a.size.unwrap_or(0),
+                })
+            })
+            .collect(),
         content: msg.content?,
     })
 }

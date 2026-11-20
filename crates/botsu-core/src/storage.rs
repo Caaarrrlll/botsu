@@ -441,6 +441,81 @@ impl Store {
         Ok(n)
     }
 
+    /// The ID of the subscription posting `source_id` to `channel_id` on `platform`.
+    pub fn subscription_id(
+        &self,
+        kind: AlertKind,
+        source_id: &str,
+        platform: Platform,
+        channel_id: &str,
+    ) -> DbResult<Option<i64>> {
+        self.conn()
+            .query_row(
+                "SELECT id FROM subscriptions
+                 WHERE kind = ?1 AND source_id = ?2 AND platform = ?3 AND channel_id = ?4",
+                params![kind.as_str(), source_id, platform_str(platform), channel_id],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
+    /// Removes a server's alert subscriptions, admin/mod roles and the given settings, in one
+    /// transaction (settings import with `--replace`). Returns the number of subscriptions removed.
+    pub fn clear_server_config(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        setting_keys: &[&str],
+    ) -> DbResult<usize> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let p = platform_str(platform);
+        let subs = tx.execute(
+            "DELETE FROM subscriptions WHERE platform = ?1 AND guild_id = ?2",
+            params![p, guild_id],
+        )?;
+        tx.execute(
+            "DELETE FROM guild_roles WHERE platform = ?1 AND guild_id = ?2",
+            params![p, guild_id],
+        )?;
+        for key in setting_keys {
+            tx.execute(
+                "DELETE FROM guild_settings WHERE platform = ?1 AND guild_id = ?2 AND key = ?3",
+                params![p, guild_id, key],
+            )?;
+        }
+        tx.commit()?;
+        Ok(subs)
+    }
+
+    /// Adds `(level, role_id)` pairs and sets settings in one transaction (settings import).
+    pub fn apply_server_config(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        roles: &[(&str, String)],
+        settings: &[(String, String)],
+    ) -> DbResult<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let p = platform_str(platform);
+        for (level, role) in roles {
+            tx.execute(
+                "INSERT OR IGNORE INTO guild_roles (platform, guild_id, level, role_id)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![p, guild_id, level, role],
+            )?;
+        }
+        for (key, value) in settings {
+            tx.execute(
+                "INSERT OR REPLACE INTO guild_settings (platform, guild_id, key, value)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![p, guild_id, key, value],
+            )?;
+        }
+        tx.commit()
+    }
+
     pub fn add_pending(&self, kind: AlertKind, p: &PendingItem) -> DbResult<()> {
         self.conn().execute(
             "INSERT OR IGNORE INTO pending_items

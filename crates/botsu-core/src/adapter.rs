@@ -95,6 +95,24 @@ pub struct IncomingMessage {
     pub message_id: String,
     pub author: Author,
     pub content: String,
+    /// Files attached to the message (`admin import` reads one).
+    pub attachments: Vec<Attachment>,
+}
+
+/// A file attached to an incoming message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attachment {
+    pub url: String,
+    pub filename: String,
+    /// Bytes, as reported by the platform (0 if unknown).
+    pub size: u64,
+}
+
+/// A text channel in a server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChannelInfo {
+    pub id: String,
+    pub name: String,
 }
 
 /// Outbound operations the core may ask of a platform.
@@ -174,6 +192,30 @@ pub trait ChatAdapter: Send + Sync {
         Err(Error::Unsupported {
             platform: self.platform(),
             op: "recent_messages",
+        })
+    }
+
+    /// Sends `content` (may be empty) with one file attached and returns the message ID.
+    async fn send_file(
+        &self,
+        channel_id: &str,
+        content: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> Result<String> {
+        let _ = (channel_id, content, filename, data);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "file uploads",
+        })
+    }
+
+    /// A server's text (and announcement) channels.
+    async fn text_channels(&self, guild_id: &str) -> Result<Vec<ChannelInfo>> {
+        let _ = guild_id;
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "listing channels",
         })
     }
 

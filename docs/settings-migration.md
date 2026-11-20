@@ -1,6 +1,8 @@
 # Plan: export and import a server's settings
 
-Status: plan (2026-11-20), not started. Tracked in [roadmap.md](roadmap.md) (phase 7, optional).
+Status: built (2026-11-20) in `botsu-core/src/transfer.rs`, steps 1–5 below; live test pending
+(testing.md section 9). Not built yet: `--create-channels` and `import from <platform> <server>` (step 7).
+Tracked in [roadmap.md](roadmap.md).
 
 ## Goal
 
@@ -85,8 +87,9 @@ IDs never match between servers, so the importer works out where everything goes
    matches `youtube-alerts`. Only text channels the bot can post in count.
 2. **Roles by name.** Matching ignores case and must be exact otherwise; a near miss is not
    enough for permissions. The `@everyone` role is never mapped.
-3. **Manual overrides on the command line:** `map #old-name #channel` and
-   `map @OldRole @Role`, for anything that didn't match or matched the wrong thing.
+3. **Manual overrides on the command message**, one per line: `map <old name or ID> = <new>`,
+   where the new side is a mention, an ID or a name (`map mod-log = #moderation`,
+   `map Mods = @Moderators`). For anything that didn't match or matched the wrong thing.
 4. **Missing channels.** Anything still unmatched is listed in the preview and skipped. With
    `--create-channels`, botsu creates the missing text channels first (bot needs Manage
    Channels). That's off by default because it's the only step that changes the server itself.

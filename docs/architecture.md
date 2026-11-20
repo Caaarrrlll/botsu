@@ -64,6 +64,7 @@ once connected, and pollers look up `bot.chat(platform)` to post.
 | `bot_user_id`, `user_name` | no | moderation (hierarchy check, names in the mod-log) |
 | `kick`, `ban`, `unban`, `bans`, `timeout` | no | moderation (phase 5); reasons go to the audit log |
 | `send_embed(channel, text, embed)` | no | alerts (embed with a large image; plain text if refused) |
+| `send_file(channel, text, name, bytes)`, `text_channels(guild)` | no | settings export/import (`transfer.rs`); `IncomingMessage.attachments` carries the uploaded file |
 | `send_dm(user, text)`, `guild_name` | no | moderation DMs (`set moddm on`). Fluxer opens the DM with `POST /users/@me/channels` |
 
 Optional methods have default bodies that return `Error::Unsupported`, so a platform that can't

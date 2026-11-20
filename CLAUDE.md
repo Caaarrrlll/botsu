@@ -70,7 +70,8 @@ Live-tested: alerts (testing.md 5: uploads, YouTube live, Twitch live, no repost
 (7, incl. mute/moddm), Discord music and volume (8), alert embeds and mentions, the Fluxer API spike.
 Then phase 7 (cutover, docs/cutover.md). Red still runs on the Discord servers with `$`, so botsu
 runs with `BOTSU_PREFIX=!` (code default stays `$`); Red is not to be changed until phase 7.
-Next code: settings export/import (docs/settings-migration.md). Parked: Twitch EventSub, YouTube
+Settings export/import is built (`transfer.rs`, `admin export|import`; docs/settings-migration.md;
+`transfer::SETTINGS` must list every `guild_settings` key, a test enforces it). Parked: Twitch EventSub, YouTube
 cookies, Stoat. Branch protection waits for the user's git flow. Keep docs/roadmap.md checkboxes
 up to date as work lands.
 
