@@ -174,7 +174,7 @@ search/URL ──► yt-dlp (subprocess) ──► stream URL ──► ffmpeg �
 - [x] **Discord voice:** songbird, with DAVE confirmed in phase 0.
 - [x] **Fluxer voice:** botsu's patched fluxer-rust (`vendor/`) adds `play_input`: ffmpeg with reconnect flags, reading yt-dlp's output from stdin, errors returned to botsu instead of posted to a channel. Both platforms now pipe `yt-dlp -o -` into ffmpeg.
 - [x] Docker image ships Deno (yt-dlp downloads itself); the native Linux guide lists ffmpeg and Deno.
-- [x] Memory: about 60 MB idle (target: under 100 MB) and about 230 MB while playing, for the container (2026-11-19), against Red + Lavalink's 520 MB to 1.2 GB. After 24 h mostly idle (2026-11-22): botsu 34 MiB, Red 376 MiB (Red's container alone, Lavalink not counted), both 0% CPU. Playing (2026-11-22): Discord alone 112.5 MiB / 0.06% CPU; Discord and Fluxer at once 251.8 MiB / 0.17% CPU.
+- [x] Memory: about 60 MB idle (target: under 100 MB) and about 230 MB while playing, for the container (2026-11-19), against Red + Lavalink's 520 MB to 1.2 GB. After 24 h mostly idle (2026-11-22): botsu 34 MiB, Red 376 MiB (Red's container alone, Lavalink not counted), both 0% CPU. Playing (2026-11-22): Discord alone 112.5 MiB / 0.06% CPU; Discord and Fluxer at once 251.8 MiB / 0.17% CPU. All measurements and what the memory is made of: [resource-usage.md](resource-usage.md).
 
 **Done when:** play, queue and skip work on Discord and Fluxer, playback survives a network hiccup, and yt-dlp can be updated without a new image.
 
