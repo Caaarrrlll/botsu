@@ -68,8 +68,9 @@ Unraid template on the server matches deploy/unraid/my-botsu.xml (migrated 2026-
 Live-tested: alerts (testing.md 5: uploads, YouTube live, Twitch live, no reposts, on both platforms),
 `cleanup messages`, Fluxer music playback, phase 0 voice. Still to test: server tools (6), moderation
 (7, incl. mute/moddm), Discord music and volume (8), alert embeds and mentions, the Fluxer API spike.
-Then phase 7 (cutover, docs/cutover.md). Red still runs on the Discord servers with `$`, so botsu
-runs with `BOTSU_PREFIX=!` (code default stays `$`); Red is not to be changed until phase 7.
+Cutover (phase 7, docs/cutover.md): Red's setup was migrated and Red stopped on 2026-11-22; it is
+kept a week as rollback, then removed. botsu takes over `$` (still `BOTSU_PREFIX=!` until the user
+switches). From now on the focus is improving botsu.
 Settings export/import is built (`transfer.rs`, `admin export|import`; docs/settings-migration.md;
 `transfer::SETTINGS` must list every `guild_settings` key, a test enforces it). Parked: Twitch EventSub, YouTube
 cookies, Stoat. Branch protection waits for the user's git flow. Keep docs/roadmap.md checkboxes
