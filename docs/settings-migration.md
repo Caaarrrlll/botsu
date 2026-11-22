@@ -28,6 +28,7 @@ Only server configuration moves, never data about users.
 | Mod-log channel | `guild_settings` `modlog_channel` | yes | |
 | Music volume | `guild_settings` `music_volume` | yes | |
 | Mute role, mod DMs on/off | `guild_settings` `mute_role`, `mod_dm` | yes | mute role is mapped like the admin/mod roles |
+| Server command prefix | `guild_settings` `prefix` | yes | applies to the next message after import |
 | Custom alert text and mention | `subscriptions.message`, `.mention` | yes | the mention role is mapped like the others |
 | Scheduled unmutes | `scheduled_unmutes` | **no** | about users |
 | Who added a subscription | `subscriptions.created_by` | **no** | user ID; the importer becomes the creator |

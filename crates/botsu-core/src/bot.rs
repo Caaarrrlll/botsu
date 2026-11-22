@@ -18,6 +18,8 @@ pub struct Bot {
     chats: RwLock<HashMap<Platform, Arc<dyn ChatAdapter>>>,
     /// Invite links of the connected platforms, shared with the `invite` command.
     invites: InviteLinks,
+    /// Where servers' own prefixes (`setprefix`) are stored; `None`: the default everywhere.
+    store: Option<Arc<crate::storage::Store>>,
 }
 
 impl Bot {
@@ -29,6 +31,7 @@ impl Bot {
             permissions: None,
             chats: RwLock::default(),
             invites: InviteLinks::default(),
+            store: None,
         };
         bot.register(Ping);
         bot.register(Invite(bot.invites.clone()));
@@ -41,6 +44,40 @@ impl Bot {
 
     pub fn prefix(&self) -> &str {
         &self.prefix
+    }
+
+    /// Per-server prefixes: adds the `setprefix` command (mods). The prefix is read from the
+    /// database for each message (a primary-key lookup), so an import or `setprefix` applies
+    /// straight away.
+    pub fn enable_server_prefixes(&mut self, store: Arc<crate::storage::Store>) {
+        self.register(crate::server::SetPrefixCommand::new(
+            store.clone(),
+            self.prefix.clone(),
+        ));
+        self.store = Some(store);
+    }
+
+    /// The prefix commands use in this server: its own (`setprefix`) or the bot's.
+    fn prefix_for(&self, platform: Platform, guild: Option<&str>) -> String {
+        let saved = match (&self.store, guild) {
+            (Some(store), Some(g)) => store
+                .guild_setting(platform, g, crate::server::PREFIX_KEY)
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "couldn't read the server prefix");
+                    None
+                }),
+            _ => None,
+        };
+        saved.unwrap_or_else(|| self.prefix.clone())
+    }
+
+    /// The command in a message: with this server's prefix, or `setprefix` with the bot's own
+    /// prefix too, so a forgotten server prefix can always be changed back.
+    fn parse_command<'a>(&self, prefix: &str, content: &'a str) -> Option<(String, &'a str)> {
+        command::parse(prefix, content).or_else(|| {
+            command::parse(&self.prefix, content)
+                .filter(|(name, _)| prefix != self.prefix && name == "setprefix")
+        })
     }
 
     pub fn has_owners(&self) -> bool {
@@ -105,14 +142,15 @@ impl Bot {
         if message.author.is_bot {
             return;
         }
-        let Some((name, args)) = command::parse(&self.prefix, &message.content) else {
+        let prefix = self.prefix_for(message.platform, message.guild_id.as_deref());
+        let Some((name, args)) = self.parse_command(&prefix, &message.content) else {
             return;
         };
         let args = args.to_owned();
 
         if name == "help" {
             let level = self.level_of(&*chat, &message).await;
-            let text = self.help_text(level);
+            let text = self.help_text(level, &prefix);
             if let Err(e) = chat.send_message(&message.channel_id, &text).await {
                 tracing::warn!(error = %e, "failed to send help");
             }
@@ -135,7 +173,7 @@ impl Bot {
                 let text = format!(
                     "You need to be {} to use `{}{}`.",
                     cmd.level(),
-                    self.prefix,
+                    prefix,
                     name
                 );
                 let _ = chat.send_message(&channel_id, &text).await;
@@ -151,8 +189,8 @@ impl Bot {
         let ctx = CommandContext {
             chat: chat.clone(),
             is_owner,
-            prefix: self.prefix.clone(),
-            bot_prefix: self.prefix.clone(),
+            prefix: prefix.clone(),
+            bot_prefix: prefix.clone(),
             level,
             message,
             args,
@@ -170,20 +208,15 @@ impl Bot {
     }
 
     /// Only the commands `level` may run.
-    fn help_text(&self, level: Level) -> String {
+    fn help_text(&self, level: Level, prefix: &str) -> String {
         let mut out = String::from("Commands:\n");
-        out.push_str(&format!("`{}help`: show this list\n", self.prefix));
+        out.push_str(&format!("`{prefix}help`: show this list\n"));
         for (_, cmd) in self
             .commands
             .iter()
             .filter(|(name, c)| **name == c.name() && c.level() <= level)
         {
-            out.push_str(&format!(
-                "`{}{}`: {}\n",
-                self.prefix,
-                cmd.name(),
-                cmd.help()
-            ));
+            out.push_str(&format!("`{}{}`: {}\n", prefix, cmd.name(), cmd.help()));
         }
         out
     }
@@ -208,5 +241,42 @@ mod tests {
             ]
         );
         assert!(bot.commands.contains_key("invite"));
+    }
+
+    #[test]
+    fn server_prefix_replaces_the_default_except_for_setprefix() {
+        let mut bot = Bot::new("!", Vec::new());
+        let store = Arc::new(crate::storage::Store::open_in_memory().unwrap());
+        store
+            .set_guild_setting(Platform::Fluxer, "g", crate::server::PREFIX_KEY, Some("?"))
+            .unwrap();
+        bot.enable_server_prefixes(store.clone());
+        let p = bot.prefix_for(Platform::Fluxer, Some("g"));
+        assert_eq!(p, "?");
+        assert_eq!(
+            bot.prefix_for(Platform::Discord, Some("g")),
+            "!",
+            "per platform"
+        );
+        assert_eq!(
+            bot.prefix_for(Platform::Fluxer, None),
+            "!",
+            "DMs use the default"
+        );
+        assert_eq!(
+            bot.parse_command(&p, "?ping").map(|c| c.0),
+            Some("ping".into())
+        );
+        assert_eq!(bot.parse_command(&p, "!ping"), None);
+        assert_eq!(
+            bot.parse_command(&p, "!setprefix reset").map(|c| c.0),
+            Some("setprefix".into()),
+            "the default prefix still reaches setprefix"
+        );
+        // Written elsewhere (an import): applies to the next message.
+        store
+            .set_guild_setting(Platform::Fluxer, "g", crate::server::PREFIX_KEY, Some("."))
+            .unwrap();
+        assert_eq!(bot.prefix_for(Platform::Fluxer, Some("g")), ".");
     }
 }

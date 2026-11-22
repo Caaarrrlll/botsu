@@ -349,7 +349,9 @@ Like `scheduled_unbans`, plus `role_id` (the mute role given, removed when `unmu
 ### `guild_settings` (migration 4)
 
 Key/value per `(platform, guild_id, key)`. Keys: `modlog_channel`, `music_volume`, `mute_role`,
-`mod_dm` (`on` or absent), `alert_embeds` (`off` or absent).
+`mod_dm` (`on` or absent), `alert_embeds` (`off` or absent), `prefix` (`setprefix`; replaces the
+default prefix in that server, read per message in `Bot::prefix_for`; `setprefix` also answers to
+the default so a forgotten prefix can be reset).
 
 ## Configuration
 

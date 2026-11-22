@@ -57,6 +57,85 @@ async fn resolve_role(ctx: &CommandContext, guild: &str, arg: &str) -> Result<Ro
         .ok_or_else(|| Error::Usage(format!("There's no role called `{arg}` here.")))
 }
 
+// --- setprefix ------------------------------------------------------------------------------------
+
+/// `guild_settings` key for a server's own command prefix.
+pub const PREFIX_KEY: &str = "prefix";
+const PREFIX_MAX: usize = 5;
+
+/// `setprefix [new | reset]`: this server's command prefix (mods). The server's prefix replaces
+/// the bot's default there; `setprefix` also answers to the default, so it can't be lost.
+pub struct SetPrefixCommand {
+    store: Arc<Store>,
+    default: String,
+}
+
+impl SetPrefixCommand {
+    pub(crate) fn new(store: Arc<Store>, default: String) -> Self {
+        Self { store, default }
+    }
+}
+
+/// A usable prefix: 1 to 5 characters, no spaces, and no backticks (they'd break the usage
+/// hints, which are in code spans).
+fn valid_prefix(p: &str) -> bool {
+    let n = p.chars().count();
+    (1..=PREFIX_MAX).contains(&n) && !p.chars().any(|c| c.is_whitespace() || c == '`')
+}
+
+#[async_trait]
+impl Command for SetPrefixCommand {
+    fn name(&self) -> &'static str {
+        "setprefix"
+    }
+
+    fn help(&self) -> &'static str {
+        "Show or change this server's command prefix; `reset` goes back to the default (mods)."
+    }
+
+    fn level(&self) -> Level {
+        Level::Mod
+    }
+
+    async fn run(&self, ctx: CommandContext) -> Result<()> {
+        let guild = guild(&ctx)?;
+        let platform = ctx.message.platform;
+        let current = self.store.guild_setting(platform, &guild, PREFIX_KEY)?;
+        let arg = ctx.args.trim();
+        let d = &self.default;
+
+        let reply = if arg.is_empty() {
+            match current {
+                Some(p) => format!(
+                    "This server's prefix is `{p}` (the default is `{d}`; `{d}setprefix` always \
+                     works too)."
+                ),
+                None => format!("This server uses the default prefix, `{d}`."),
+            }
+        } else if arg.eq_ignore_ascii_case("reset") {
+            self.store
+                .set_guild_setting(platform, &guild, PREFIX_KEY, None)?;
+            format!("Back to the default prefix, `{d}`.")
+        } else if !valid_prefix(arg) {
+            return Err(Error::Usage(format!(
+                "A prefix is 1 to {PREFIX_MAX} characters, without spaces or backticks. \
+                 Usage: `{}setprefix <prefix>`, `{}setprefix reset`.",
+                ctx.prefix, ctx.prefix
+            )));
+        } else {
+            let value = (arg != d.as_str()).then_some(arg);
+            self.store
+                .set_guild_setting(platform, &guild, PREFIX_KEY, value)?;
+            format!(
+                "Commands here now start with `{arg}`, for example `{arg}help`. If it's ever \
+                 forgotten, `{d}setprefix` still works."
+            )
+        };
+        ctx.reply(&reply).await?;
+        Ok(())
+    }
+}
+
 // --- set ------------------------------------------------------------------------------------------
 
 /// `set adminrole|modrole add|remove <role>` and `set roles`.
@@ -684,6 +763,17 @@ impl Command for AnnounceCommand {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn prefixes() {
+        use super::valid_prefix;
+        assert!(valid_prefix("?"));
+        assert!(valid_prefix("bot!"));
+        assert!(!valid_prefix(""));
+        assert!(!valid_prefix("a b"));
+        assert!(!valid_prefix("toolong"));
+        assert!(!valid_prefix("`"));
+    }
 
     #[test]
     fn role_then_members() {

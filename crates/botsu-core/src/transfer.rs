@@ -23,7 +23,7 @@ use crate::error::{Error, Result};
 use crate::moderation::{MODLOG_KEY, MOD_DM_KEY, MUTE_ROLE_KEY};
 use crate::music::VOLUME_KEY;
 use crate::permissions::{Level, ADMIN_ROLE, MOD_ROLE};
-use crate::server::guild;
+use crate::server::{guild, PREFIX_KEY};
 use crate::storage::{AlertKind, NewSubscription, Scope, Store, Subscription};
 
 /// The file format this botsu writes and reads.
@@ -55,6 +55,7 @@ pub const SETTINGS: &[(&str, Portable)] = &[
     (MOD_DM_KEY, Portable::Value),
     (VOLUME_KEY, Portable::Value),
     (EMBEDS_KEY, Portable::Value),
+    (PREFIX_KEY, Portable::Value),
 ];
 
 /// Short names for the preview.
@@ -65,6 +66,7 @@ fn setting_label(key: &str) -> &str {
         MOD_DM_KEY => "mod DMs",
         VOLUME_KEY => "music volume",
         EMBEDS_KEY => "alert embeds",
+        PREFIX_KEY => "command prefix",
         other => other,
     }
 }

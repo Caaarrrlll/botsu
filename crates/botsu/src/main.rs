@@ -73,6 +73,7 @@ async fn main() -> Result<()> {
     let mut bot = Bot::new(config.prefix.clone(), config.owners);
     let permissions = Arc::new(Permissions::new(store.clone()));
     bot.set_permissions(permissions.clone());
+    bot.enable_server_prefixes(store.clone());
     bot.register(SetCommand::new(store.clone()));
     bot.register(server::admin_group(
         store.clone(),
