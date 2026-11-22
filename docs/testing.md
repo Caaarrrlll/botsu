@@ -106,7 +106,7 @@ INFO botsu_discord: connected to Discord user=botsu-dev guilds=3
 | Test | Discord | Fluxer |
 |---|---|---|
 | `!ping` answers `Pong! (<platform>)` | | |
-| `$help` lists commands in sections: **Administration** (admin, mod, set, setprefix), **Cool Things** (music, cc, invite, tube, twitch, feedback), **Misc** (ping); only what you may run; empty sections left out | | |
+| `$help` lists commands in a code block per section, using the server's prefix after `setprefix`: **Administration** (admin, mod, set, setprefix), **Cool Things** (music, cc, invite, tube, twitch, feedback), **Misc** (ping); only what you may run; empty sections left out | | |
 | `!invite` lists one link per connected platform (Discord, Fluxer), without link previews; each link opens the add-bot page | | |
 | `!feedback` (or `!bug`, `!feature`, `!issue`) links to the GitHub issues page | | |
 | `!PING` (upper case) works | | |

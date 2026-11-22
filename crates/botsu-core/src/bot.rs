@@ -280,10 +280,20 @@ impl Bot {
             if section.is_empty() {
                 continue;
             }
-            out.push_str(&format!("**{title}**\n"));
+            // One code block per section, names in a column. Backticks inside a block would
+            // show literally, so the help texts lose theirs.
+            let width = section
+                .iter()
+                .map(|c| prefix.chars().count() + c.name().chars().count())
+                .max()
+                .unwrap_or(0);
+            out.push_str(&format!("**{title}**\n```\n"));
             for cmd in section {
-                out.push_str(&format!("`{}{}`: {}\n", prefix, cmd.name(), cmd.help()));
+                let name = format!("{prefix}{}", cmd.name());
+                let help = cmd.help().replace('`', "");
+                out.push_str(&format!("{name:<width$}  {help}\n"));
             }
+            out.push_str("```\n");
         }
         out
     }
@@ -417,8 +427,28 @@ mod tests {
         let cool = text.find("**Cool Things**").unwrap();
         let misc = text.find("**Misc**").unwrap();
         assert!(cool < misc);
-        assert!(text.contains("`$invite`") && text.contains("`$ping`"));
-        assert!(!text.contains("`$help`"), "help isn't listed");
+        assert!(
+            text.contains(
+                "
+$invite  "
+            ) || text.contains(
+                "
+$invite "
+            )
+        );
+        assert!(text.contains(
+            "
+$ping"
+        ));
+        assert!(
+            text.contains(
+                "**Misc**
+```
+$ping"
+            ),
+            "{text}"
+        );
+        assert!(!text.contains("$help"), "help isn't listed");
         // No Administration command registered here: no empty heading.
         assert!(!text.contains("**Administration**"));
     }
