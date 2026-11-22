@@ -98,6 +98,12 @@ pub trait Command: Send + Sync {
         false
     }
 
+    /// Subcommands `level` may run, as `(name, help)`, for `help`. Only groups have any.
+    fn subcommands(&self, level: Level) -> Vec<(&'static str, &'static str)> {
+        let _ = level;
+        Vec::new()
+    }
+
     async fn run(&self, ctx: CommandContext) -> Result<()>;
 }
 
@@ -175,6 +181,14 @@ impl Command for Group {
 
     fn needs_level(&self) -> bool {
         self.subs.values().any(|c| c.level() > Level::Everyone)
+    }
+
+    fn subcommands(&self, level: Level) -> Vec<(&'static str, &'static str)> {
+        self.subs
+            .values()
+            .filter(|c| c.level() <= level)
+            .map(|c| (c.name(), c.help()))
+            .collect()
     }
 
     async fn run(&self, mut ctx: CommandContext) -> Result<()> {

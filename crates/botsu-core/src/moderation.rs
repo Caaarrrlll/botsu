@@ -1255,6 +1255,19 @@ Reason: spam"
         fn actions(&self) -> Vec<String> {
             self.actions.lock().unwrap().clone()
         }
+        /// Everything sent to `channel`, oldest first, joined (help sends several messages).
+        fn all_sent(&self, channel: &str) -> String {
+            let sent = self.sent.lock().unwrap();
+            sent.iter()
+                .filter(|(c, _)| c == channel)
+                .map(|(_, t)| t.as_str())
+                .collect::<Vec<_>>()
+                .join(
+                    "
+",
+                )
+        }
+
         fn last_sent(&self, channel: &str) -> String {
             let sent = self.sent.lock().unwrap();
             sent.iter()
@@ -1564,7 +1577,8 @@ Reason: spam"
         let moderator = s.say("10", "!moderation").await;
         assert!(moderator.contains("`!mod ban`") && moderator.contains("`!mod cleanup`"));
 
-        let help = s.say("30", "!help").await;
+        s.say("30", "!help").await;
+        let help = s.chat.all_sent("here");
         assert_eq!(help.matches("\n!mod ").count(), 1, "{help}");
         assert!(
             !help.contains("\n!moderation"),

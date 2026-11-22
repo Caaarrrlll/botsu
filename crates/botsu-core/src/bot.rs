@@ -191,9 +191,11 @@ impl Bot {
 
         if name == "help" {
             let level = self.level_of(&*chat, &message).await;
-            let text = self.help_text(level, &prefix);
-            if let Err(e) = chat.send_message(&message.channel_id, &text).await {
-                tracing::warn!(error = %e, "failed to send help");
+            for text in self.help_messages(level, &prefix) {
+                if let Err(e) = chat.send_message(&message.channel_id, &text).await {
+                    tracing::warn!(error = %e, "failed to send help");
+                    break;
+                }
             }
             return;
         }
@@ -254,13 +256,15 @@ impl Bot {
         }
     }
 
-    /// The commands `level` may run, in the sections of [`HELP_SECTIONS`]. Commands not listed
-    /// there go in the last section, so a new command never disappears from help.
-    fn help_text(&self, level: Level, prefix: &str) -> String {
+    /// `help`: one message per section of [`HELP_SECTIONS`], with only what `level` may run.
+    /// Groups list their subcommands indented under them. A section longer than one message
+    /// is split at line breaks (if that starts happening, the layout needs revisiting).
+    fn help_messages(&self, level: Level, prefix: &str) -> Vec<String> {
         let visible: Vec<&Arc<dyn Command>> = self
             .commands
             .iter()
             .filter(|(name, c)| **name == c.name() && c.level() <= level)
+            .filter(|(name, _)| !HELP_HIDDEN.contains(name))
             .map(|(_, c)| c)
             .collect();
         let listed: Vec<&str> = HELP_SECTIONS
@@ -268,46 +272,85 @@ impl Bot {
             .flat_map(|(_, names)| names.iter().copied())
             .collect();
 
-        let mut out = String::new();
+        let mut messages = Vec::new();
         for (i, (title, names)) in HELP_SECTIONS.iter().enumerate() {
             let mut section: Vec<&Arc<dyn Command>> = names
                 .iter()
                 .filter_map(|n| visible.iter().find(|c| c.name() == *n).copied())
                 .collect();
+            // Commands nobody placed go in the last section, so they never disappear.
             if i == HELP_SECTIONS.len() - 1 {
                 section.extend(visible.iter().filter(|c| !listed.contains(&c.name())));
             }
             if section.is_empty() {
                 continue;
             }
-            // One code block per section, names in a column. Backticks inside a block would
-            // show literally, so the help texts lose theirs.
-            let width = section
-                .iter()
-                .map(|c| prefix.chars().count() + c.name().chars().count())
-                .max()
-                .unwrap_or(0);
-            out.push_str(&format!("**{title}**\n```\n"));
-            for cmd in section {
-                let name = format!("{prefix}{}", cmd.name());
-                let help = cmd.help().replace('`', "");
-                out.push_str(&format!("{name:<width$}  {help}\n"));
-            }
-            out.push_str("```\n");
+            messages.extend(help_section(title, &section_lines(&section, level, prefix)));
         }
-        out
+        messages
     }
 }
 
-/// How `help` groups commands, in order. Unlisted commands go in the last section.
+/// How `help` groups commands, one message each, in order. Commands in no section and not
+/// hidden go in the last one.
 const HELP_SECTIONS: &[(&str, &[&str])] = &[
     ("Administration", &["admin", "mod", "set", "setprefix"]),
     (
         "Cool Things",
         &["music", "cc", "invite", "tube", "twitch", "feedback"],
     ),
-    ("Misc", &["ping"]),
 ];
+
+/// Commands that work but aren't listed in `help`.
+const HELP_HIDDEN: &[&str] = &["ping"];
+
+/// Discord's limit is 2000 characters; leave room.
+const HELP_MESSAGE_MAX: usize = 1900;
+
+/// The lines of one section: `$name  help`, and each group's subcommands indented under it.
+/// Names line up in a column. Backticks in help texts would show literally in a code block,
+/// so they're dropped.
+fn section_lines(section: &[&Arc<dyn Command>], level: Level, prefix: &str) -> Vec<String> {
+    let width = section
+        .iter()
+        .map(|c| prefix.chars().count() + c.name().chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut lines = Vec::new();
+    for cmd in section {
+        let name = format!("{prefix}{}", cmd.name());
+        lines.push(format!("{name:<width$}  {}", cmd.help().replace('`', "")));
+        let subs = cmd.subcommands(level);
+        let sub_width = subs
+            .iter()
+            .map(|(n, _)| n.chars().count())
+            .max()
+            .unwrap_or(0);
+        for (sub, help) in subs {
+            lines.push(format!("    {sub:<sub_width$}  {}", help.replace('`', "")));
+        }
+    }
+    lines
+}
+
+/// `**title**` and the lines in a code block, as one message or, past the limit, several
+/// (the title repeated with "continued").
+fn help_section(title: &str, lines: &[String]) -> Vec<String> {
+    let mut messages = Vec::new();
+    let mut current = format!("**{title}**\n```\n");
+    for line in lines {
+        if current.len() + line.len() + 5 > HELP_MESSAGE_MAX && current.contains('\n') {
+            current.push_str("```");
+            messages.push(current);
+            current = format!("**{title}** (continued)\n```\n");
+        }
+        current.push_str(line);
+        current.push('\n');
+    }
+    current.push_str("```");
+    messages.push(current);
+    messages
+}
 
 #[cfg(test)]
 mod tests {
@@ -422,34 +465,32 @@ mod tests {
     #[test]
     fn help_is_grouped_and_hides_what_you_cant_run() {
         let bot = Bot::new("!", Vec::new());
-        let text = bot.help_text(Level::Everyone, "$");
-        // Built into Bot::new: invite and feedback (Cool Things), ping (Misc).
-        let cool = text.find("**Cool Things**").unwrap();
-        let misc = text.find("**Misc**").unwrap();
-        assert!(cool < misc);
-        assert!(
-            text.contains(
-                "
-$invite  "
-            ) || text.contains(
-                "
-$invite "
-            )
+        // Built into Bot::new: invite and feedback (Cool Things), ping (hidden).
+        let messages = bot.help_messages(Level::Everyone, "$");
+        assert_eq!(
+            messages.len(),
+            1,
+            "no Administration command registered: {messages:?}"
         );
-        assert!(text.contains(
-            "
-$ping"
-        ));
-        assert!(
-            text.contains(
-                "**Misc**
-```
-$ping"
-            ),
-            "{text}"
-        );
-        assert!(!text.contains("$help"), "help isn't listed");
-        // No Administration command registered here: no empty heading.
-        assert!(!text.contains("**Administration**"));
+        let cool = &messages[0];
+        assert!(cool.starts_with("**Cool Things**\n```\n"), "{cool}");
+        assert!(cool.ends_with("```"), "{cool}");
+        assert!(cool.contains("\n$invite  "), "{cool}");
+        assert!(!cool.contains("$ping"), "ping is hidden");
+        assert!(!cool.contains("$help"), "help isn't listed");
+    }
+
+    #[test]
+    fn long_sections_split_into_messages() {
+        let lines: Vec<String> = (0..100)
+            .map(|i| format!("$cmd{i:03}  {}", "x".repeat(40)))
+            .collect();
+        let messages = help_section("Big", &lines);
+        assert!(messages.len() > 1);
+        assert!(messages.iter().all(|m| m.chars().count() <= 2000));
+        assert!(messages[1].starts_with("**Big** (continued)\n```\n"));
+        assert!(messages.iter().all(|m| m.ends_with("```")));
+        let total: usize = messages.iter().map(|m| m.matches("$cmd").count()).sum();
+        assert_eq!(total, 100, "no line lost");
     }
 }
