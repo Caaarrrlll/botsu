@@ -192,6 +192,27 @@ Runbook: [cutover.md](cutover.md).
 
 **Done when:** Red is gone and nobody noticed.
 
+## Code review (no date yet)
+
+A full read-through of the Rust code, once the feature work settles. Guiding rule: KISS. Prefer
+plain functions and data over design patterns, traits and layers of abstraction; remove
+abstractions that only have one use.
+
+- [ ] **Rust issues:** trait design and use (object safety, `async_trait` costs, default methods
+  hiding missing behaviour, traits with a single implementation), borrowing and ownership
+  (needless clones, `Arc`/`Mutex` where a plain value would do, locks held across `.await`,
+  `unwrap`/`expect` that can panic in production), error handling (lost context, errors
+  swallowed silently), and `unsafe` or blocking calls on the async runtime.
+- [ ] **Simplicity:** code that could be shorter or more direct, duplicated logic between the
+  `tube`/`twitch`/moderation commands, string building and parsing done by hand in several
+  places, modules that grew too large (`transfer.rs`, `moderation.rs`).
+- [ ] **Best-practices loop:** run `cargo clippy` with the pedantic group as a review aid (fix
+  what reads better, ignore the rest), check dependency freshness and features
+  (`cargo tree -d`, unused features), and repeat review → fix → test until a pass finds nothing
+  worth changing.
+- [ ] Record what was changed and what was deliberately left as is, so the next review starts
+  from there.
+
 ## Bonus: Stoat
 
 Only after phase 6, and only if the community wants it.
