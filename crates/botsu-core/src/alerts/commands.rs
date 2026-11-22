@@ -421,6 +421,28 @@ fn scope(ctx: &CommandContext) -> Scope<'_> {
 
 /// Posts a notice in the target channel before saving the subscription, which also proves
 /// the bot is allowed to post there.
+/// The reply for a source that already posts to `target`, if it does. Checked before the notice
+/// in the target channel, so adding twice (for example a migration run again) changes nothing
+/// and posts nothing there.
+fn already_subscribed(
+    store: &Store,
+    kind: AlertKind,
+    source_id: &str,
+    ctx: &CommandContext,
+    target: &str,
+    name: &str,
+) -> Result<Option<String>> {
+    let exists = store
+        .subscription_id(kind, source_id, ctx.message.platform, target)?
+        .is_some();
+    Ok(exists.then(|| {
+        format!(
+            "<#{target}> was already subscribed to **{}**; nothing changed.",
+            escape_md(name)
+        )
+    }))
+}
+
 async fn announce_in_target(ctx: &CommandContext, target: &str, text: &str) -> Result<()> {
     ctx.ensure_channel_here(target).await?;
     ctx.chat
@@ -481,6 +503,19 @@ impl TubeCommand {
         } else {
             feed.channel_name.clone()
         };
+
+        // Already there (a migration run twice): say so, without a second notice.
+        if let Some(reply) = already_subscribed(
+            &self.store,
+            AlertKind::YouTube,
+            &channel_id,
+            ctx,
+            target,
+            &name,
+        )? {
+            ctx.reply(&reply).await?;
+            return Ok(());
+        }
 
         announce_in_target(
             ctx,
@@ -851,6 +886,19 @@ impl TwitchCommand {
             .await
             .map_err(|e| Error::internal("Twitch user lookup", e))?
             .ok_or_else(|| Error::Usage(format!("There's no Twitch user called `{login}`.")))?;
+
+        // Already there (a migration run twice): say so, without a second notice.
+        if let Some(reply) = already_subscribed(
+            &self.store,
+            AlertKind::Twitch,
+            &user.id,
+            ctx,
+            target,
+            &user.display_name,
+        )? {
+            ctx.reply(&reply).await?;
+            return Ok(());
+        }
 
         announce_in_target(
             ctx,
