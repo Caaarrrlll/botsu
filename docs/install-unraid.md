@@ -92,6 +92,8 @@ that same file when you click **Apply**, so downloading it again resets those fi
 re-download while you keep your settings in `botsu.env`; otherwise note your values first, or edit
 the file by hand. Image updates don't need a new template.
 
+Step-by-step for the latest template change (the Log levels field): [unraid-template-migration.md](unraid-template-migration.md).
+
 ## Keeping secrets elsewhere (optional)
 
 Settings can also come from environment variables, which override the file: add
