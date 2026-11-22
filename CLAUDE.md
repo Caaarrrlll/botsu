@@ -66,8 +66,10 @@ schema, adapter trait or alert rules change.
 Running on Unraid from the Docker Hub image (CI publishes on push; docs-only pushes skip the image).
 Unraid template on the server matches deploy/unraid/my-botsu.xml (migrated 2026-11-20).
 Live-tested: alerts (testing.md 5: uploads, YouTube live, Twitch live, no reposts, on both platforms),
-`cleanup messages`, Fluxer music playback, phase 0 voice. Still to test: server tools (6), moderation
-(7, incl. mute/moddm), Discord music and volume (8), alert embeds and mentions, the Fluxer API spike.
+`cleanup messages`, music playback on both platforms, help layout, phase 0 voice. Still to test: the
+rest of server tools (6), moderation (7, incl. mute/moddm), volume (8), alert embeds and mentions,
+custom commands, export/import, the Fluxer API spike (needs a second account). Keep README.md's
+Status section current too.
 Cutover (phase 7, docs/cutover.md): Red's setup was migrated and Red stopped on 2026-11-22; it is
 kept a week as rollback, then removed. botsu took over `$` on 2026-11-22 (template prefix
 blank). From now on the focus is improving botsu.

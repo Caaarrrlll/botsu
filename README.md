@@ -1,23 +1,40 @@
 # botsu
 
-A lean, self-hosted chat bot in Rust, replacing a Red-DiscordBot instance. It runs on
-**Discord** and **[Fluxer](https://fluxer.app)** from one platform-neutral core (Stoat is a
-possible bonus). Plan: [docs/roadmap.md](docs/roadmap.md). How it works inside (crates, database
-tables, alert rules, extending): [docs/architecture.md](docs/architecture.md). Background:
-[docs/handover.md](docs/handover.md).
+A lean, self-hosted chat bot in Rust for **Discord** and **[Fluxer](https://fluxer.app)**, run
+from one platform-neutral core. It replaced a Red-DiscordBot instance (with Lavalink) on
+2026-11-22, using a fraction of the memory. Plan: [docs/roadmap.md](docs/roadmap.md). How it
+works inside (crates, database tables, alert rules, extending):
+[docs/architecture.md](docs/architecture.md). Background: [docs/handover.md](docs/handover.md).
+
+## What it does
+
+- **Alerts:** YouTube uploads and live streams, Twitch live streams, posted as an embed with a
+  large image; custom text and a role or user mention per alert.
+- **Moderation:** warn, kick, ban, temp-ban, timeout, mute, numbered cases, a mod log, optional
+  DMs to members.
+- **Server tools:** admin and mod roles, cleanup, add/remove roles, announcements, a per-server
+  prefix, custom commands, and exporting/importing a server's setup between servers or platforms.
+- **Music:** YouTube (and more, via yt-dlp) in voice channels: queue, playlists, pause, volume.
+- `help` lists what each member may run; `invite` gives the invite links; `feedback` links to
+  the issue tracker.
 
 ## Status
 
-| Phase | State |
+Running in production on Discord and a self-hosted Fluxer instance since 2026-11-22. First
+release: [v0.1.0](https://github.com/Caaarrrlll/botsu/releases/tag/v0.1.0).
+
+| Area | State |
 |---|---|
-| 0. Spikes (voice on Fluxer, Discord DAVE) | open, see [spikes/](spikes/README.md) |
-| 1. Skeleton on Discord + Fluxer | `!ping` works on both; Docker image still to verify |
-| 2. Alerts (YouTube uploads, Twitch live) | code done; live test pending |
-| 3. CI/CD (GitHub Actions → Docker Hub) and install guides | **done**: every push to `master` publishes the image |
-| 4. Server tools (permissions, cleanup, admin) | code done; live test pending |
-| 5. Moderation (cases, temp-bans, warnings) | |
-| 6. Music (yt-dlp + ffmpeg → Discord voice / LiveKit) | |
-| 7. Cutover from Red | |
+| Alerts (YouTube, Twitch) | live on both platforms |
+| Music | live on both platforms |
+| Server tools | built; `cleanup` live-tested, the rest pending |
+| Moderation | built; live test pending |
+| Custom commands, per-server prefix, settings export/import | built; live test pending |
+| CI/CD | every push to `master` publishes the Docker image; `vX.Y.Z` tags publish release binaries |
+| Cutover from Red | done 2026-11-22; Red's removal pending |
+
+Memory: about 34 MiB idle, about 112 MiB while playing music on Discord
+([details](docs/resource-usage.md)). Live test checklists: [docs/testing.md](docs/testing.md).
 
 ## Run locally
 
@@ -27,7 +44,8 @@ set -a; . ./.env; set +a
 cargo run -p botsu
 ```
 
-Then type `!ping` in a channel the bot can see (`.env.example` sets `BOTSU_PREFIX=!` so botsu doesn't clash with Red; the built-in default is `$`).
+Then type `$ping` in a channel the bot can see. If another bot on the same servers already uses
+`$`, set `BOTSU_PREFIX` (for example `!`).
 
 The first build is slow: `fluxer-rust` pulls in LiveKit, which downloads and links libwebrtc.
 
@@ -42,11 +60,13 @@ All configuration is environment variables; see [.env.example](.env.example).
 | `FLUXER_URL` | no | your self-hosted instance's web address; API URL is discovered. Unset = fluxer.app |
 | `FLUXER_API_URL` | no | explicit API base with `/v1`; overrides `FLUXER_URL` |
 | `BOTSU_PREFIX` | no | `$`; a server can set its own with `setprefix` (mods) |
-| `BOTSU_OWNERS` | for import | user IDs (any platform) allowed to import alert lists and toggle Shorts |
+| `BOTSU_OWNERS` | recommended | user IDs (any platform) of the bot's owners: they outrank everyone and alone may import alert lists, toggle Shorts and run the music test tools |
+| `BOTSU_INVITE_ADMIN` | no | `false`; `true` makes the invite links ask for Administrator |
 | `YOUTUBE_API_KEY` | recommended | YouTube Data API v3 key: @handles, live/upcoming stream detection |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | for Twitch alerts | from dev.twitch.tv; both or neither |
 | `BOTSU_DATA_DIR` | no | `data` (`/data` in Docker): SQLite database |
 | `YOUTUBE_POLL_SECONDS`, `TWITCH_POLL_SECONDS` | no | `300`, `120` |
+| `BOTSU_YTDLP` | no | botsu's own yt-dlp in the data folder, updated daily; set a path to use another |
 | `BOTSU_LOG` | no | log levels to print, any combination of `ERROR,WARN,INFO,DEBUG,TRACE` or `ALL`; blank = `ERROR,WARN,INFO` |
 | `RUST_LOG` | no | expert override in tracing's filter syntax; wins over `BOTSU_LOG` from the same place |
 
@@ -86,7 +106,7 @@ crates/botsu-core    platform-neutral core (no platform dependencies)
 crates/botsu-discord Discord adapter (only crate using serenity)
 crates/botsu-fluxer  Fluxer adapter (only crate using fluxer-rust)
 crates/botsu         binary: config, logging, adapter tasks
-spikes/              throwaway phase-0 experiments
+spikes/              throwaway experiments
 ```
 
 Details (database tables, alert rules, adding a platform or command): [docs/architecture.md](docs/architecture.md).
