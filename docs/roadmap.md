@@ -183,7 +183,7 @@ search/URL ──► yt-dlp (subprocess) ──► stream URL ──► ffmpeg �
 Runbook: [cutover.md](cutover.md).
 
 - [x] Run botsu next to Red on Discord with a different prefix (`!`, since phase 2).
-- [ ] Give it `$` (cutover.md step 2): clear the template's Command prefix (blank = `$`) and any `BOTSU_PREFIX=!` in botsu.env; tell members `!` → `$`.
+- [x] Give it `$` (cutover.md step 2), 2026-11-22: template Command prefix cleared (blank = `$`). Red turned off; kicked from the server that had nothing configured. A `BOTSU_PREFIX=!` left in botsu.env would still win over the blank field.
 - [x] Move Tube/streams subscriptions and mod settings over (2026-11-22, all three Discord servers; from Red's cog settings: 5 Tube subscriptions, 5 Twitch alerts, volume 60. Red had no mod log, cases, custom commands, admin/mod roles or prefixes to move).
 - [ ] Stop Red, then remove the Red container and Lavalink. Record memory before and after. Red stopped 2026-11-22 and kept a week as rollback (idle: Red 376 MiB, botsu 34 MiB). After the week: delete Red's Discord application (removes it from all servers, no `$leave` needed; irreversible), then the container, Lavalink and their appdata.
 - [ ] Update the server notes (template snapshot, env file location, update procedure).
