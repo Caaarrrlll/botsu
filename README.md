@@ -47,7 +47,8 @@ All configuration is environment variables; see [.env.example](.env.example).
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | for Twitch alerts | from dev.twitch.tv; both or neither |
 | `BOTSU_DATA_DIR` | no | `data` (`/data` in Docker): SQLite database |
 | `YOUTUBE_POLL_SECONDS`, `TWITCH_POLL_SECONDS` | no | `300`, `120` |
-| `RUST_LOG` | no | `info,botsu=debug` |
+| `BOTSU_LOG` | no | log levels to print, any combination of `ERROR,WARN,INFO,DEBUG,TRACE` or `ALL`; blank = `ERROR,WARN,INFO` |
+| `RUST_LOG` | no | expert override in tracing's filter syntax; wins over `BOTSU_LOG` from the same place |
 
 Getting tokens and testing against live servers: [docs/testing.md](docs/testing.md).
 

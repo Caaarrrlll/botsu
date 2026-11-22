@@ -50,6 +50,22 @@ Changing them needs the container recreated (`docker compose up -d`), not just r
 Creating the Discord and Fluxer bots: [testing.md](testing.md), sections 1 and 2. Once connected,
 the log prints an invite link for each platform.
 
+## Logs
+
+`docker logs botsu` (or `docker compose logs -f`). `BOTSU_LOG` picks the levels to print, in any
+combination: `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`, or `ALL`, comma-separated. Only those
+levels are printed (`DEBUG,ERROR` shows debug lines and errors, nothing else); blank means
+`ERROR,WARN,INFO`. `DEBUG` shows every command run. The levels apply to botsu's own lines;
+libraries only print their warnings and errors. For fine control, `RUST_LOG` (tracing's filter
+syntax, for example `info,songbird=debug`) overrides it.
+
+botsu writes no log file: Docker keeps what it prints. With Docker's default `json-file` driver
+that grows without limit, so cap it:
+
+- Compose: the `logging:` block in `deploy/docker-compose.yml` (3 files of 10 MB).
+- `docker run`: `--log-opt max-size=10m --log-opt max-file=3`.
+- Unraid: Settings → Docker → "Docker log rotation" (on by default), for every container.
+
 ## Data and permissions
 
 `/data` holds `botsu.env` and the SQLite database (alert subscriptions, what's been posted).

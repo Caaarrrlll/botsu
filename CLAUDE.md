@@ -101,6 +101,9 @@ up to date as work lands.
   `pkg-config libglib2.0-dev libva-dev`.
 
 ## Conventions
+- Logging (`crates/botsu/src/logging.rs`): `BOTSU_LOG` = set of levels (any combination, or ALL), botsu's
+  own targets only; libraries warn/error only. `RUST_LOG` overrides. Read before the rest of the config,
+  from env then `botsu.env`; the environment beats the file whichever variable is used.
 - Secrets only in env vars (env file on the server, `--env-file`); never commit tokens. `.env.example` lists them.
 - Keep `.env.example` in sync with every key in the user's `.env` (and any new env var the code reads),
   with a comment saying what it's for. Never read `.env` values; compare key names only.

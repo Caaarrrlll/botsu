@@ -1,4 +1,5 @@
 mod config;
+mod logging;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,20 +17,10 @@ use botsu_core::Bot;
 use botsu_discord::DiscordVoice;
 use botsu_fluxer::FluxerVoice;
 use tokio::task::JoinSet;
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            // A blank RUST_LOG (an empty Unraid template field) means "default", not "errors only".
-            std::env::var("RUST_LOG")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
-                .and_then(|v| EnvFilter::try_new(v).ok())
-                .unwrap_or_else(|| EnvFilter::new("info,botsu=debug")),
-        )
-        .init();
+    logging::init();
 
     let config = load_config().await?;
     tracing::info!(

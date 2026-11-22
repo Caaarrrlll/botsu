@@ -69,7 +69,7 @@ Every option below reads `.env`; stop the bot with Ctrl+C (or the red square in 
 
 | What | How | Mode |
 |---|---|---|
-| Debug (breakpoints) | Run and Debug panel → **botsu (debug)** → F5 | debug build, `RUST_LOG` from `.env` |
+| Debug (breakpoints) | Run and Debug panel → **botsu (debug)** → F5 | debug build, `BOTSU_LOG` / `RUST_LOG` from `.env` |
 | Production | Run and Debug → **botsu (release)** → Ctrl+F5 | release build, `RUST_LOG=info` |
 | Run without the debugger | Terminal → Run Task → **botsu: run (debug)** / **botsu: run (release)** | as above |
 | Checks before committing | Run Task → **check: all (fmt, clippy, test)** | |
@@ -115,7 +115,9 @@ INFO botsu_discord: connected to Discord user=botsu-dev guilds=3
 | Bot reconnects after a network drop (disable Wi-Fi for ~30 s) | | |
 | Ctrl+C shuts down cleanly | | |
 
-Report anything odd with the log output. `RUST_LOG=debug` shows every command run.
+Report anything odd with the log output. `BOTSU_LOG=DEBUG,INFO,WARN,ERROR` shows every command run.
+
+| `BOTSU_LOG=DEBUG,ERROR` prints only debug lines and errors (no INFO/WARN); `ALL` prints everything of botsu's; blank prints ERROR, WARN and INFO | | |
 
 ## 5. Alerts (phase 2)
 

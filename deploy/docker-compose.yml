@@ -16,5 +16,14 @@ services:
       # The bot runs as this user and owns ./data. Set them to your own IDs (`id -u`, `id -g`).
       PUID: "1000"
       PGID: "1000"
+      # Log levels to print, any combination: ERROR, WARN, INFO, DEBUG, TRACE or ALL.
+      # Blank = ERROR,WARN,INFO.
+      # BOTSU_LOG: "ERROR,WARN,INFO"
+    # Docker keeps the log; without this it grows forever. Three files of 10 MB at most.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # env_file:
     #   - ./botsu.env
