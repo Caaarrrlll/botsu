@@ -254,20 +254,50 @@ impl Bot {
         }
     }
 
-    /// Only the commands `level` may run.
+    /// The commands `level` may run, in the sections of [`HELP_SECTIONS`]. Commands not listed
+    /// there go in the last section, so a new command never disappears from help.
     fn help_text(&self, level: Level, prefix: &str) -> String {
-        let mut out = String::from("Commands:\n");
-        out.push_str(&format!("`{prefix}help`: show this list\n"));
-        for (_, cmd) in self
+        let visible: Vec<&Arc<dyn Command>> = self
             .commands
             .iter()
             .filter(|(name, c)| **name == c.name() && c.level() <= level)
-        {
-            out.push_str(&format!("`{}{}`: {}\n", prefix, cmd.name(), cmd.help()));
+            .map(|(_, c)| c)
+            .collect();
+        let listed: Vec<&str> = HELP_SECTIONS
+            .iter()
+            .flat_map(|(_, names)| names.iter().copied())
+            .collect();
+
+        let mut out = String::new();
+        for (i, (title, names)) in HELP_SECTIONS.iter().enumerate() {
+            let mut section: Vec<&Arc<dyn Command>> = names
+                .iter()
+                .filter_map(|n| visible.iter().find(|c| c.name() == *n).copied())
+                .collect();
+            if i == HELP_SECTIONS.len() - 1 {
+                section.extend(visible.iter().filter(|c| !listed.contains(&c.name())));
+            }
+            if section.is_empty() {
+                continue;
+            }
+            out.push_str(&format!("**{title}**\n"));
+            for cmd in section {
+                out.push_str(&format!("`{}{}`: {}\n", prefix, cmd.name(), cmd.help()));
+            }
         }
         out
     }
 }
+
+/// How `help` groups commands, in order. Unlisted commands go in the last section.
+const HELP_SECTIONS: &[(&str, &[&str])] = &[
+    ("Administration", &["admin", "mod", "set", "setprefix"]),
+    (
+        "Cool Things",
+        &["music", "cc", "invite", "tube", "twitch", "feedback"],
+    ),
+    ("Misc", &["ping"]),
+];
 
 #[cfg(test)]
 mod tests {
@@ -377,5 +407,19 @@ mod tests {
             assert!(reserved.contains(name), "{name} should be reserved");
         }
         assert!(!reserved.contains("hi"));
+    }
+
+    #[test]
+    fn help_is_grouped_and_hides_what_you_cant_run() {
+        let bot = Bot::new("!", Vec::new());
+        let text = bot.help_text(Level::Everyone, "$");
+        // Built into Bot::new: invite and feedback (Cool Things), ping (Misc).
+        let cool = text.find("**Cool Things**").unwrap();
+        let misc = text.find("**Misc**").unwrap();
+        assert!(cool < misc);
+        assert!(text.contains("`$invite`") && text.contains("`$ping`"));
+        assert!(!text.contains("`$help`"), "help isn't listed");
+        // No Administration command registered here: no empty heading.
+        assert!(!text.contains("**Administration**"));
     }
 }
