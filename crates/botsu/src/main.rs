@@ -106,6 +106,8 @@ async fn main() -> Result<()> {
     let ytdlp = YtDlp::new(&config.data_dir, config.ytdlp.clone(), http.clone());
     ytdlp::spawn_maintenance(ytdlp.clone());
     bot.register(music::group(&Music::new(voices, ytdlp, store.clone())));
+    // Last: custom commands can't take the names registered above.
+    bot.enable_custom_commands(store.clone());
     let bot = Arc::new(bot);
 
     // One task per platform. If any adapter dies, exit so Docker restarts us.

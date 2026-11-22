@@ -75,6 +75,11 @@ Settings export/import is built (`transfer.rs`, `admin export|import`; docs/sett
 cookies, Stoat. Branch protection waits for the user's git flow. Keep docs/roadmap.md checkboxes
 up to date as work lands.
 
+## Commands beyond the phases
+- `setprefix` (per-server prefix, read per message in `Bot::prefix_for`), `cc` custom commands
+  (`custom.rs`, migration 7; `bot.enable_custom_commands` must run after all other registrations),
+  `invite` (adapters call `bot.register_invite`), `feedback` (GitHub issues link).
+
 ## Alerts (beyond phase 2)
 - Per subscription: custom text (`message`, placeholders `{name} {title} {url} {game} {event}`) and a
   mention (role, `user:<ID>`, everyone/here); migration 5. Names/titles are Markdown-escaped (`escape_md`).

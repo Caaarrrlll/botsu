@@ -94,6 +94,16 @@ pub struct Export {
     pub settings: BTreeMap<String, SettingValue>,
     #[serde(default)]
     pub subscriptions: Vec<Sub>,
+    /// Custom commands (`cc`): name and text, without who made them. Optional in the file, so
+    /// exports from before custom commands still import.
+    #[serde(default)]
+    pub custom_commands: Vec<CustomCom>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomCom {
+    pub name: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -295,6 +305,11 @@ pub async fn build_export(
         permissions,
         settings,
         subscriptions,
+        custom_commands: store
+            .custom_commands(platform, guild_id)?
+            .into_iter()
+            .map(|(name, text)| CustomCom { name, text })
+            .collect(),
     })
 }
 
@@ -328,6 +343,8 @@ pub struct TargetServer {
     pub guild_id: String,
     pub channels: Vec<ChannelInfo>,
     pub roles: Vec<RoleInfo>,
+    /// Names of the custom commands it already has.
+    pub custom_commands: Vec<String>,
 }
 
 impl TargetServer {
@@ -460,6 +477,8 @@ pub struct Plan {
     pub subs: Vec<PlannedSub>,
     pub roles: Vec<(&'static str, String)>,
     pub settings: Vec<(String, String)>,
+    /// Custom commands to add or replace, as `(name, text)`.
+    pub custom_commands: Vec<(String, String)>,
     /// One line per item, for the preview.
     pub lines: Vec<String>,
     pub from: String,
@@ -613,6 +632,24 @@ pub fn plan(
         }
     }
 
+    let mut custom_commands = Vec::new();
+    for c in &export.custom_commands {
+        if !crate::custom::valid_name(&c.name) || c.text.trim().is_empty() {
+            lines.push(format!(
+                "• custom command `{}`: unusable name or text, skipped",
+                c.name
+            ));
+        } else if !replace && target.custom_commands.contains(&c.name) {
+            lines.push(format!(
+                "• custom command `{}`: already there, kept",
+                c.name
+            ));
+        } else {
+            lines.push(format!("• custom command `{}`: add", c.name));
+            custom_commands.push((c.name.clone(), c.text.clone()));
+        }
+    }
+
     let name = if export.from.guild_name.is_empty() {
         format!("`{}`", export.from.guild_id)
     } else {
@@ -628,6 +665,7 @@ pub fn plan(
         subs,
         roles,
         settings,
+        custom_commands,
         lines,
         from: format!("{platform} server {name}"),
     }
@@ -682,6 +720,9 @@ pub async fn apply(
         0
     };
     store.apply_server_config(platform, guild_id, &plan.roles, &plan.settings)?;
+    for (name, text) in &plan.custom_commands {
+        store.set_custom_command(platform, guild_id, name, text, user_id)?;
+    }
 
     let mut channels: Vec<&str> = plan.subs.iter().map(|s| s.channel.as_str()).collect();
     channels.sort_unstable();
@@ -734,10 +775,11 @@ pub async fn apply(
     }
 
     let mut out = format!(
-        "Imported from {}: {added} alert(s), {} role(s), {} setting(s).",
+        "Imported from {}: {added} alert(s), {} role(s), {} setting(s), {} custom command(s).",
         plan.from,
         plan.roles.len(),
-        plan.settings.len()
+        plan.settings.len(),
+        plan.custom_commands.len()
     );
     if plan.replace {
         out.push_str(&format!(" ({removed} old alert(s) removed first.)"));
@@ -890,6 +932,12 @@ impl ImportCommand {
             guild_id: guild.to_owned(),
             channels: ctx.chat.text_channels(guild).await?,
             roles: ctx.chat.roles(guild).await?,
+            custom_commands: self
+                .store
+                .custom_commands(ctx.message.platform, guild)?
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect(),
         };
         let scope = Scope::Guild(guild);
         let mut existing = self
@@ -1062,6 +1110,16 @@ mod tests {
                     mention: None,
                 },
             ],
+            custom_commands: vec![
+                CustomCom {
+                    name: "rules".into(),
+                    text: "Be nice, {author}.".into(),
+                },
+                CustomCom {
+                    name: "ip".into(),
+                    text: "play.example.org".into(),
+                },
+            ],
         }
     }
 
@@ -1092,6 +1150,7 @@ mod tests {
                 role("921", "admins"),
                 role("922", "Moderators"),
             ],
+            custom_commands: vec!["rules".into()],
         }
     }
 
@@ -1153,6 +1212,12 @@ mod tests {
             .settings
             .contains(&(VOLUME_KEY.to_owned(), "80".to_owned())));
         assert!(p.preview("!").contains("admin import confirm"));
+        // Custom commands: "rules" exists here already, "ip" is new.
+        assert_eq!(
+            p.custom_commands,
+            vec![("ip".to_owned(), "play.example.org".to_owned())]
+        );
+        assert!(p.lines.iter().any(|l| l.contains("`rules`: already there")));
     }
 
     #[test]
@@ -1212,9 +1277,17 @@ map Mods = Moderators",
         let summary = apply(&p, &store, &Quiet, Platform::Fluxer, "900", "owner")
             .await
             .unwrap();
+        // "rules" exists on the target already (merge keeps it); "ip" is added.
         assert!(
-            summary.contains("1 alert(s), 2 role(s), 2 setting(s)"),
+            summary.contains("1 alert(s), 2 role(s), 2 setting(s), 1 custom command(s)"),
             "{summary}"
+        );
+        assert_eq!(
+            store
+                .custom_command(Platform::Fluxer, "900", "ip")
+                .unwrap()
+                .as_deref(),
+            Some("play.example.org")
         );
         let subs = store
             .list_subscriptions(AlertKind::YouTube, Platform::Fluxer, Scope::Guild("900"))

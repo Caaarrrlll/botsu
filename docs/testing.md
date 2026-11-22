@@ -108,6 +108,7 @@ INFO botsu_discord: connected to Discord user=botsu-dev guilds=3
 | `!ping` answers `Pong! (<platform>)` | | |
 | `!help` lists `help` and `ping` | | |
 | `!invite` lists one link per connected platform (Discord, Fluxer), without link previews; each link opens the add-bot page | | |
+| `!feedback` (or `!bug`, `!feature`, `!issue`) links to the GitHub issues page | | |
 | `!PING` (upper case) works | | |
 | Messages without the prefix are ignored | | |
 | Messages from other bots (for example Red) are ignored | | |
@@ -233,6 +234,8 @@ Each level can do everything the ones below it can. `!help` lists only what you 
 !set adminrole add <role>      !set adminrole remove <role>     ← server owner
 !set modrole add <role>        !set modrole remove <role>
 !setprefix [<prefix> | reset]  ← mods: this server's prefix; !setprefix always works with the default
+!cc create <name> <text>       ← mods; also !cc edit, !cc delete. Anyone: !cc list, !cc show <name>
+                                 text placeholders: {author} {author.name} {channel} {0}-{9}
 !set roles                     ← who counts as admin and mod here
 !mod cleanup messages <n>          ← mods: the last n messages (up to 1000)
 !mod cleanup user <@user> <n>      ← that user's last n messages
@@ -253,6 +256,7 @@ for the bots already in your servers, add them to the bot's role.
 | A regular member doesn't see `cleanup`/`addrole`/`set` in `!help` and gets "You need to be …" | | |
 | `!set modrole add <role>`, `!set roles` shows it; a member with that role can `!mod cleanup` | | |
 | `!setprefix ?`: `?help` works, `!help` doesn't any more; `!setprefix reset` still works and brings `!` back; a regular member is refused | | |
+| `!cc create rules Be nice, {author}.` then `!rules` answers with a mention; `!cc list`, `!cc show rules`; `!cc create ping x` is refused (built-in); a regular member can use and list but not create | | |
 | `!mod cleanup messages 5` deletes 5 messages plus the command; the confirmation vanishes after 5 s | ✅ 2026-11-20 | ✅ 2026-11-20 |
 | `!mod cleanup user @someone 3`, `!mod cleanup bots 10` only delete theirs | | |
 | `!admin addrole @someone <role>` / `!admin removerole` work; a role above the bot's gives a clear error | refused ✅ 2026-11-20 (bot role too low) | refused ✅ 2026-11-20 (bot role too low) |

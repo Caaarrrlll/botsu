@@ -240,6 +240,36 @@ impl Command for Ping {
     }
 }
 
+/// Where people report bugs and ask for features.
+pub const ISSUES_URL: &str = "https://github.com/Caaarrrlll/botsu/issues";
+
+/// `feedback` (aliases `bug`, `feature`, `issue`): where to report a bug or ask for a feature.
+pub(crate) struct Feedback;
+
+#[async_trait]
+impl Command for Feedback {
+    fn name(&self) -> &'static str {
+        "feedback"
+    }
+
+    fn aliases(&self) -> &[&'static str] {
+        &["bug", "feature", "issue"]
+    }
+
+    fn help(&self) -> &'static str {
+        "Where to report a bug or ask for a feature."
+    }
+
+    async fn run(&self, ctx: CommandContext) -> Result<()> {
+        ctx.reply(&format!(
+            "Found a bug or want a feature? Open an issue (a GitHub account is needed): \
+             <{ISSUES_URL}/new>\nExisting ones: <{ISSUES_URL}>"
+        ))
+        .await?;
+        Ok(())
+    }
+}
+
 /// Invite links, one per connected platform, registered by the adapters
 /// ([`crate::Bot::register_invite`]). Kept sorted by platform name.
 pub(crate) type InviteLinks = Arc<RwLock<Vec<(Platform, String)>>>;

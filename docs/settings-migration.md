@@ -31,6 +31,7 @@ Only server configuration moves, never data about users.
 | Server command prefix | `guild_settings` `prefix` | yes | applies to the next message after import |
 | Custom alert text and mention | `subscriptions.message`, `.mention` | yes | the mention role is mapped like the others |
 | Scheduled unmutes | `scheduled_unmutes` | **no** | about users |
+| Custom commands (`cc`) | `custom_commands` | yes, name and text | merge keeps a command that already exists; who made it isn't exported |
 | Who added a subscription | `subscriptions.created_by` | **no** | user ID; the importer becomes the creator |
 | Cases, warnings | `mod_cases` | **no** | about users; IDs don't carry across platforms anyway |
 | Pending temp-bans | `scheduled_unbans` | **no** | about users |

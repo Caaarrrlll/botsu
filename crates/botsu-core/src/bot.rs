@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use crate::adapter::{ChatAdapter, IncomingMessage, Platform};
-use crate::command::{self, Command, CommandContext, Invite, InviteLinks, Ping};
+use crate::command::{self, Command, CommandContext, Feedback, Invite, InviteLinks, Ping};
 use crate::error::Error;
 use crate::permissions::{Level, Permissions};
 
@@ -20,6 +20,8 @@ pub struct Bot {
     invites: InviteLinks,
     /// Where servers' own prefixes (`setprefix`) are stored; `None`: the default everywhere.
     store: Option<Arc<crate::storage::Store>>,
+    /// Where custom commands (`cc`) are stored; `None`: custom commands off.
+    custom: Option<Arc<crate::storage::Store>>,
 }
 
 impl Bot {
@@ -32,9 +34,11 @@ impl Bot {
             chats: RwLock::default(),
             invites: InviteLinks::default(),
             store: None,
+            custom: None,
         };
         bot.register(Ping);
         bot.register(Invite(bot.invites.clone()));
+        bot.register(Feedback);
         bot
     }
 
@@ -55,6 +59,43 @@ impl Bot {
             self.prefix.clone(),
         ));
         self.store = Some(store);
+    }
+
+    /// Custom commands (`cc`). Call after registering every built-in command: their names
+    /// (and `help`) are reserved.
+    pub fn enable_custom_commands(&mut self, store: Arc<crate::storage::Store>) {
+        let reserved = self.reserved_names();
+        self.register(crate::custom::CustomCommand::new(store.clone(), reserved));
+        self.custom = Some(store);
+    }
+
+    /// Names a custom command can't take: every registered command and alias, `help`, and
+    /// `cc` itself.
+    fn reserved_names(&self) -> std::collections::BTreeSet<String> {
+        let mut reserved: std::collections::BTreeSet<String> =
+            self.commands.keys().map(|k| (*k).to_owned()).collect();
+        for name in ["help", "cc", "customcom"] {
+            reserved.insert(name.to_owned());
+        }
+        reserved
+    }
+
+    /// A server's custom command, if `name` is one: the reply text, placeholders filled in.
+    fn custom_reply(&self, message: &IncomingMessage, name: &str, args: &str) -> Option<String> {
+        let (store, guild) = (self.custom.as_ref()?, message.guild_id.as_deref()?);
+        let text = store
+            .custom_command(message.platform, guild, name)
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "couldn't read a custom command");
+                None
+            })?;
+        Some(crate::custom::render(
+            &text,
+            &message.author.id,
+            &message.author.name,
+            &message.channel_id,
+            args,
+        ))
     }
 
     /// The prefix commands use in this server: its own (`setprefix`) or the bot's.
@@ -158,7 +199,13 @@ impl Bot {
         }
 
         let Some(cmd) = self.commands.get(name.as_str()).cloned() else {
-            return; // Unknown commands are ignored silently, like Red.
+            // Not built in: maybe this server's custom command. Otherwise ignored, like Red.
+            if let Some(text) = self.custom_reply(&message, &name, &args) {
+                if let Err(e) = chat.send_message(&message.channel_id, &text).await {
+                    tracing::warn!(error = %e, command = %name, "couldn't post a custom command");
+                }
+            }
+            return;
         };
 
         let channel_id = message.channel_id.clone();
@@ -278,5 +325,57 @@ mod tests {
             .set_guild_setting(Platform::Fluxer, "g", crate::server::PREFIX_KEY, Some("."))
             .unwrap();
         assert_eq!(bot.prefix_for(Platform::Fluxer, Some("g")), ".");
+    }
+
+    #[test]
+    fn custom_commands_answer_and_builtins_are_reserved() {
+        let mut bot = Bot::new("!", Vec::new());
+        let store = Arc::new(crate::storage::Store::open_in_memory().unwrap());
+        bot.enable_custom_commands(store.clone());
+        store
+            .set_custom_command(Platform::Fluxer, "g", "hi", "Hi {author}, {0}!", "u")
+            .unwrap();
+        let message = |guild: Option<&str>| IncomingMessage {
+            platform: Platform::Fluxer,
+            guild_id: guild.map(str::to_owned),
+            channel_id: "c".into(),
+            message_id: "m".into(),
+            author: crate::adapter::Author {
+                id: "7".into(),
+                name: "Seven".into(),
+                is_bot: false,
+            },
+            content: String::new(),
+            attachments: Vec::new(),
+        };
+        assert_eq!(
+            bot.custom_reply(&message(Some("g")), "hi", "there"),
+            Some("Hi <@7>, there!".into())
+        );
+        assert_eq!(bot.custom_reply(&message(Some("g")), "nope", ""), None);
+        assert_eq!(
+            bot.custom_reply(&message(None), "hi", ""),
+            None,
+            "not in DMs"
+        );
+        assert_eq!(
+            bot.custom_reply(&message(Some("other")), "hi", ""),
+            None,
+            "per server"
+        );
+        // Built-ins and their aliases are reserved.
+        let reserved = bot.reserved_names();
+        for name in [
+            "ping",
+            "invite",
+            "feedback",
+            "bug",
+            "help",
+            "cc",
+            "customcom",
+        ] {
+            assert!(reserved.contains(name), "{name} should be reserved");
+        }
+        assert!(!reserved.contains("hi"));
     }
 }

@@ -106,6 +106,16 @@ const MIGRATIONS: &[&str] = &[
         attempts    INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (platform, guild_id, user_id)
     );",
+    // 7: custom commands (`cc`)
+    "CREATE TABLE custom_commands (
+        platform   TEXT NOT NULL,
+        guild_id   TEXT NOT NULL,
+        name       TEXT NOT NULL,      -- lower case, without the prefix
+        response   TEXT NOT NULL,
+        created_by TEXT NOT NULL,      -- user ID of the last create/edit
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (platform, guild_id, name)
+    );",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -476,6 +486,10 @@ impl Store {
         )?;
         tx.execute(
             "DELETE FROM guild_roles WHERE platform = ?1 AND guild_id = ?2",
+            params![p, guild_id],
+        )?;
+        tx.execute(
+            "DELETE FROM custom_commands WHERE platform = ?1 AND guild_id = ?2",
             params![p, guild_id],
         )?;
         for key in setting_keys {
@@ -887,6 +901,79 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()
+    }
+
+    /// A custom command's text.
+    pub fn custom_command(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        name: &str,
+    ) -> DbResult<Option<String>> {
+        self.conn()
+            .query_row(
+                "SELECT response FROM custom_commands
+                 WHERE platform = ?1 AND guild_id = ?2 AND name = ?3",
+                params![platform_str(platform), guild_id, name],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
+    /// Adds or replaces a custom command.
+    pub fn set_custom_command(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        name: &str,
+        response: &str,
+        user_id: &str,
+    ) -> DbResult<()> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO custom_commands
+               (platform, guild_id, name, response, created_by, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                platform_str(platform),
+                guild_id,
+                name,
+                response,
+                user_id,
+                now()
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Returns true if it existed.
+    pub fn delete_custom_command(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+        name: &str,
+    ) -> DbResult<bool> {
+        let n = self.conn().execute(
+            "DELETE FROM custom_commands WHERE platform = ?1 AND guild_id = ?2 AND name = ?3",
+            params![platform_str(platform), guild_id, name],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// A server's custom commands as `(name, text)`, by name.
+    pub fn custom_commands(
+        &self,
+        platform: Platform,
+        guild_id: &str,
+    ) -> DbResult<Vec<(String, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT name, response FROM custom_commands
+             WHERE platform = ?1 AND guild_id = ?2 ORDER BY name",
+        )?;
+        let rows = stmt.query_map(params![platform_str(platform), guild_id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?;
+        rows.collect()
     }
 
     /// Sets a server setting; `None` removes it.

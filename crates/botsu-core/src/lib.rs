@@ -11,6 +11,7 @@ pub mod adapter;
 pub mod alerts;
 pub mod bot;
 pub mod command;
+pub mod custom;
 pub mod error;
 pub mod moderation;
 pub mod music;

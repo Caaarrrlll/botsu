@@ -346,6 +346,15 @@ Primary key `(platform, guild_id, number)`; index on `(platform, guild_id, targe
 
 Like `scheduled_unbans`, plus `role_id` (the mute role given, removed when `unmute_at` is due).
 
+### `custom_commands` (migration 7)
+
+`(platform, guild_id, name)` primary key, `response`, `created_by` (last create/edit),
+`updated_at`. `custom.rs`: `cc create|edit|delete` (mods), `list`, `show`. `Bot::handle_message`
+falls back to the server's custom command when no built-in matches; built-in names and aliases
+are reserved (`Bot::reserved_names`, so `enable_custom_commands` runs after every other
+registration). Placeholders: `{author}`, `{author.name}`, `{channel}`, `{0}`–`{9}`. Exported and
+imported with the server's settings (`transfer.rs`, without `created_by`).
+
 ### `guild_settings` (migration 4)
 
 Key/value per `(platform, guild_id, key)`. Keys: `modlog_channel`, `music_volume`, `mute_role`,
