@@ -199,9 +199,8 @@ server**: off until an admin or mod turns it on.
 
 - [ ] **Turning it on:** `xp on|off` (mods and admins). Level-up announcements go to the channel
   where it happened, to a set channel (`xp channel #channel`), or nowhere (`xp announce off`).
-- [ ] **XP for chatting:** a flat amount per message. Draft: **1 XP per message, level 1 at 15 XP**
-  (15 messages). *To decide:* the request also says "15% of the first level per message", which
-  would be about 7 messages to level 1 instead.
+- [ ] **XP for chatting:** a flat amount per message: **1 XP per message, a fifteenth of level 1**
+  (level 1 at 15 XP, so 15 messages).
 - [ ] **XP for commands:** only commands everyone may use (nothing that needs mod or admin).
   Draft amounts, relative to level 1 (15 XP):
 
@@ -229,13 +228,13 @@ server**: off until an admin or mod turns it on.
 Stops a member from flooding a server with alerts. Mods, admins, the server owner and bot owners
 are exempt.
 
-- [ ] **At most 5 new alerts per person per hour per server**, counting `tube add` and
-  `twitch add` together. Only real additions count ("already subscribed" doesn't). Reply when
-  hit: "You can add 5 alerts per hour; try again in N minutes."
-- [ ] Same limit for `cc create` if creating custom commands is ever opened to everyone (today
-  it's mods only, who are exempt).
+- [ ] **At most 5 per module, per person, per hour, per server:** 5 `tube add`, 5 `twitch add`,
+  5 `cc create`, counted separately. Only real additions count ("already subscribed" doesn't).
+  Reply when hit: "You can add 5 YouTube alerts per hour; try again in N minutes."
+- [ ] `cc create` is mods only today (exempt), so its limit only matters if creating custom
+  commands is opened to everyone.
 - [ ] Kept in memory (a sliding one-hour window); a restart resets it, which is fine for spam
-  protection. *To decide:* 5 combined across `tube` and `twitch` (draft), or 5 each.
+  protection.
 
 ## Code review (no date yet)
 
