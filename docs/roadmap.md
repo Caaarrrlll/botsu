@@ -192,6 +192,51 @@ Runbook: [cutover.md](cutover.md).
 
 **Done when:** Red is gone and nobody noticed.
 
+## Later: XP and levels (planned, needs fine-tuning before building)
+
+Members earn XP by chatting and using the bot, and level up with an announcement. **Opt-in per
+server**: off until an admin or mod turns it on.
+
+- [ ] **Turning it on:** `xp on|off` (mods and admins). Level-up announcements go to the channel
+  where it happened, to a set channel (`xp channel #channel`), or nowhere (`xp announce off`).
+- [ ] **XP for chatting:** a flat amount per message. Draft: **1 XP per message, level 1 at 15 XP**
+  (15 messages). *To decide:* the request also says "15% of the first level per message", which
+  would be about 7 messages to level 1 instead.
+- [ ] **XP for commands:** only commands everyone may use (nothing that needs mod or admin).
+  Draft amounts, relative to level 1 (15 XP):
+
+  | Command | XP | Share of level 1 |
+  |---|---|---|
+  | `music play` | 4 | ~25% |
+  | other `music` controls (skip, pause, queue, …) | 2 | ~13% |
+  | using a custom command (`<prefix><name>`) | 2 | ~13% |
+  | `tube list`, `twitch list`, `invite`, `feedback`, `cc list` | 1 | ~7% |
+
+- [ ] **Level curve like Ark (Survival Evolved / Ascended):** small steps early, steeper later.
+  Draft formula: XP from level L to L+1 = `round(15 × L^1.6)`: L1→2 needs 15, L2→3 45, L5→6 196,
+  L10→11 597, L20→21 1811. Tune against real activity before shipping.
+- [ ] **Anti-farming:** chat XP at most once per user per 60 seconds; command XP at most once per
+  command per user per minute; no XP for bot accounts, DMs or the bot's own messages.
+- [ ] **Data (basic, per server):** a table like `xp_stats(platform, guild_id, user_id, xp, level,
+  messages, music_commands, cc_uses, other_commands, last_xp_at)`, for example "user x: 15
+  messages, 3 music commands, 1 cc". This is **user data**: not in settings export/import, and
+  removed with `xp reset @user` (mods). Turning XP off keeps the data until reset.
+- [ ] **Commands for members:** `rank [@user]` (level, XP to next level, the counts above) and
+  `leaderboard` (top 10 in this server).
+
+## Later: rate limits for members (planned)
+
+Stops a member from flooding a server with alerts. Mods, admins, the server owner and bot owners
+are exempt.
+
+- [ ] **At most 5 new alerts per person per hour per server**, counting `tube add` and
+  `twitch add` together. Only real additions count ("already subscribed" doesn't). Reply when
+  hit: "You can add 5 alerts per hour; try again in N minutes."
+- [ ] Same limit for `cc create` if creating custom commands is ever opened to everyone (today
+  it's mods only, who are exempt).
+- [ ] Kept in memory (a sliding one-hour window); a restart resets it, which is fine for spam
+  protection. *To decide:* 5 combined across `tube` and `twitch` (draft), or 5 each.
+
 ## Code review (no date yet)
 
 A full read-through of the Rust code, once the feature work settles. Guiding rule: KISS. Prefer
