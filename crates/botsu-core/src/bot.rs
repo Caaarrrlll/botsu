@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use crate::adapter::{ChatAdapter, IncomingMessage, Platform};
-use crate::command::{self, Command, CommandContext, Ping};
+use crate::command::{self, Command, CommandContext, Invite, InviteLinks, Ping};
 use crate::error::Error;
 use crate::permissions::{Level, Permissions};
 
@@ -16,6 +16,8 @@ pub struct Bot {
     permissions: Option<Arc<Permissions>>,
     /// Connected platforms, for sending outside a command (alerts).
     chats: RwLock<HashMap<Platform, Arc<dyn ChatAdapter>>>,
+    /// Invite links of the connected platforms, shared with the `invite` command.
+    invites: InviteLinks,
 }
 
 impl Bot {
@@ -26,8 +28,10 @@ impl Bot {
             commands: BTreeMap::new(),
             permissions: None,
             chats: RwLock::default(),
+            invites: InviteLinks::default(),
         };
         bot.register(Ping);
+        bot.register(Invite(bot.invites.clone()));
         bot
     }
 
@@ -60,6 +64,15 @@ impl Bot {
             .write()
             .unwrap_or_else(|p| p.into_inner())
             .insert(platform, chat);
+    }
+
+    /// Adapters call this once they know their invite link (`invite` lists them). A second call
+    /// for the same platform replaces its link.
+    pub fn register_invite(&self, platform: Platform, url: String) {
+        let mut links = self.invites.write().unwrap_or_else(|p| p.into_inner());
+        links.retain(|(p, _)| *p != platform);
+        links.push((platform, url));
+        links.sort_by_key(|(p, _)| p.to_string());
     }
 
     pub fn chat(&self, platform: Platform) -> Option<Arc<dyn ChatAdapter>> {
@@ -173,5 +186,27 @@ impl Bot {
             ));
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invite_links_one_per_platform_sorted() {
+        let bot = Bot::new("!", Vec::new());
+        bot.register_invite(Platform::Fluxer, "https://f/old".into());
+        bot.register_invite(Platform::Discord, "https://d".into());
+        bot.register_invite(Platform::Fluxer, "https://f/new".into());
+        let links = bot.invites.read().unwrap().clone();
+        assert_eq!(
+            links,
+            vec![
+                (Platform::Discord, "https://d".to_owned()),
+                (Platform::Fluxer, "https://f/new".to_owned())
+            ]
+        );
+        assert!(bot.commands.contains_key("invite"));
     }
 }

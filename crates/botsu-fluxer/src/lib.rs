@@ -777,10 +777,12 @@ pub async fn run(
     let (http, bot_id, webapp) = connect_rest(&config).await?;
     let api_url = http.base_url.clone();
     // On Fluxer the bot user's ID is the application ID.
-    tracing::info!(
-        "Fluxer invite link: {webapp}/oauth2/authorize?client_id={bot_id}&scope=bot&permissions={}",
+    let invite = format!(
+        "{webapp}/oauth2/authorize?client_id={bot_id}&scope=bot&permissions={}",
         botsu_core::invite_permissions(config.invite_admin)
     );
+    tracing::info!("Fluxer invite link: {invite}");
+    bot.register_invite(Platform::Fluxer, invite);
 
     let chat: Arc<dyn ChatAdapter> = Arc::new(FluxerChat::new(http, bot_id));
     bot.register_chat(chat.clone());

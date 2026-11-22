@@ -115,6 +115,7 @@ Get the project building and publishing itself before the bigger features land.
 - [x] Migrated (2026-11-20): migrate the live server to the current template (`deploy/unraid/my-botsu.xml`, up to date 2026-11-20): new overview and Bot owners text, new fields "Invite as admin" (`BOTSU_INVITE_ADMIN`) and, under advanced, "yt-dlp path" (`BOTSU_YTDLP`). Unraid saves field values in the same file, so note them before replacing it.
 - [x] `docs/install-docker.md`: `docker run` and Compose for anyone, tags, settings, updating and rolling back.
 - [x] **Invite links in the startup log**, one per connected platform: Discord from `ready.application.id`, Fluxer from the bot's user ID plus the discovered web app address. Permissions in `botsu_core::INVITE_PERMISSIONS` (now including Embed Links for alert previews); `BOTSU_INVITE_ADMIN=true` requests Administrator instead (off by default). `*_APPLICATION_ID` in `.env.example` are kept as optional, unused reference values.
+- [x] `invite` command: lists the same links, one per connected platform. Each adapter registers its link with `bot.register_invite` when it connects, so a new platform (Stoat) shows up by registering its own.
 - [x] `docs/install-linux.md` + `deploy/systemd/botsu.service`: build from source, `/etc/botsu/botsu.env` (600), `DynamicUser` + `StateDirectory` (`/var/lib/botsu`), hardened sandbox (`systemd-analyze security`: 3.2 OK). Phase 6 adds ffmpeg and yt-dlp.
 - [x] GitHub Releases carry prebuilt binaries (`.github/workflows/release.yml`, on `v*` tags; run by hand to only build): Linux x86_64 `.tar.gz` and `.deb` (built on Ubuntu 22.04, glibc 2.35+, so Fedora and Arch too) and Windows x86_64 `.zip`. Guides: install-linux.md (`.deb`, `.tar.gz`, source builds for Debian/Ubuntu, Fedora, Arch), install-windows.md.
 - [ ] First release: tag `v0.1.0`. Dry run passed 2026-11-20 (run 44696458540: .tar.gz, .deb, .zip; the Windows build starts and creates `dataotsu.env`).
@@ -193,7 +194,7 @@ Runbook: [cutover.md](cutover.md).
 Only after phase 6, and only if the community wants it.
 
 - [ ] Pick a Stoat Rust library, or call its REST/WebSocket API directly (its API is not Discord-compatible).
-- [ ] `botsu-stoat` chat adapter; capabilities report what Stoat lacks.
+- [ ] `botsu-stoat` chat adapter; capabilities report what Stoat lacks. Register its invite link (`bot.register_invite`) so `invite` lists it.
 - [ ] Music: reuse the LiveKit voice adapter if Stoat bots can join voice (Stoat added LiveKit to self-hosting in February 2026).
 
 ---

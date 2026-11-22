@@ -107,6 +107,7 @@ INFO botsu_discord: connected to Discord user=botsu-dev guilds=3
 |---|---|---|
 | `!ping` answers `Pong! (<platform>)` | | |
 | `!help` lists `help` and `ping` | | |
+| `!invite` lists one link per connected platform (Discord, Fluxer), without link previews; each link opens the add-bot page | | |
 | `!PING` (upper case) works | | |
 | Messages without the prefix are ignored | | |
 | Messages from other bots (for example Red) are ignored | | |

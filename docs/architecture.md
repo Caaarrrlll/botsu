@@ -379,7 +379,8 @@ through its constructor.
 1. New crate `botsu-<platform>`; the only one importing that platform's library.
 2. Implement `ChatAdapter`; translate incoming messages into `IncomingMessage` and call
    `bot.handle_message`.
-3. Call `bot.register_chat(..)` once connected.
+3. Call `bot.register_chat(..)` once connected, and `bot.register_invite(platform, url)` with the
+   platform's invite link (the `invite` command lists every registered link).
 4. Add a `Platform` variant and its storage name (`platform_str` / `parse_platform` in
    `storage.rs`), config in `crates/botsu/src/config.rs`, and a task in `main.rs`.
 

@@ -5,11 +5,11 @@
 //! on later by having the Discord adapter build the same [`CommandContext`].
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 
-use crate::adapter::{ChatAdapter, IncomingMessage};
+use crate::adapter::{ChatAdapter, IncomingMessage, Platform};
 use crate::error::{Error, Result};
 use crate::permissions::Level;
 
@@ -236,6 +236,40 @@ impl Command for Ping {
     async fn run(&self, ctx: CommandContext) -> Result<()> {
         ctx.reply(&format!("Pong! ({})", ctx.chat.platform()))
             .await?;
+        Ok(())
+    }
+}
+
+/// Invite links, one per connected platform, registered by the adapters
+/// ([`crate::Bot::register_invite`]). Kept sorted by platform name.
+pub(crate) type InviteLinks = Arc<RwLock<Vec<(Platform, String)>>>;
+
+/// `invite`: the links to add the bot to a server, on every platform it's connected to.
+pub(crate) struct Invite(pub(crate) InviteLinks);
+
+#[async_trait]
+impl Command for Invite {
+    fn name(&self) -> &'static str {
+        "invite"
+    }
+
+    fn help(&self) -> &'static str {
+        "Links to add the bot to a server, one per platform."
+    }
+
+    async fn run(&self, ctx: CommandContext) -> Result<()> {
+        let links = self.0.read().unwrap_or_else(|p| p.into_inner()).clone();
+        let text = if links.is_empty() {
+            "No platform is connected yet, so there's no invite link.".to_owned()
+        } else {
+            // In <...> so the apps don't show a preview for each link.
+            let lines: Vec<String> = links
+                .iter()
+                .map(|(platform, url)| format!("• **{platform}**: <{url}>"))
+                .collect();
+            format!("Add botsu to a server:\n{}", lines.join("\n"))
+        };
+        ctx.reply(&text).await?;
         Ok(())
     }
 }
