@@ -296,7 +296,7 @@ impl Command for SetCommand {
     }
 
     fn help(&self) -> &'static str {
-        "Choose admin and mod roles, the mod-log channel, the mute role and mod DMs (server owner)."
+        "Choose admin and mod roles, the mod-log channel, the mute role, mod DMs and alert embeds (server owner)."
     }
 
     fn level(&self) -> Level {
