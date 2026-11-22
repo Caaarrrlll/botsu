@@ -1565,9 +1565,9 @@ Reason: spam"
         assert!(moderator.contains("`!mod ban`") && moderator.contains("`!mod cleanup`"));
 
         let help = s.say("30", "!help").await;
-        assert_eq!(help.matches("`!mod`").count(), 1, "{help}");
+        assert_eq!(help.matches("\n!mod ").count(), 1, "{help}");
         assert!(
-            !help.contains("moderation`"),
+            !help.contains("\n!moderation"),
             "aliases aren't listed: {help}"
         );
 
