@@ -342,7 +342,7 @@ with its version. It's saved in `/data/bin`, so later starts skip the download.
 | Someone outside the bot's channel can't `!music skip`; a mod can | | |
 | A long track (30+ min) plays to the end without cutting off | | |
 | `!music update` reports the yt-dlp version | | |
-| Memory while playing (Unraid's Docker page), to compare with Red + Lavalink | | ~230 MB (idle ~60 MB) |
+| Memory while playing (Unraid's Docker page), to compare with Red + Lavalink | | ~230 MB (idle ~60 MB; 34 MiB after 24 h idle, Red 376 MiB) |
 
 A long pause can make YouTube drop the download (yt-dlp waits on a full pipe while paused); if a
 track stops right after a long pause, that's why. A long track cutting off early is also worth
