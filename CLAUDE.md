@@ -22,8 +22,9 @@ schema, adapter trait or alert rules change.
 - `crates/botsu-fluxer`: the only crate that touches `fluxer-rust` (lib name `fluxer`). Translates
   gateway events into core types; implements `ChatAdapter` over Fluxer REST. Fluxer breakage gets
   fixed here.
-- `crates/botsu`: the binary. Env config, logging, starts one task per adapter, exits if one dies
-  (Docker restarts it).
+- `crates/botsu`: the binary. Env config, logging, one task per adapter (`keep_running`): a platform
+  that fails is started again after 30 s, doubling to 10 min; the others keep running. botsu must never
+  depend on any one platform being up.
 - `spikes/`: throwaway experiments (phase 0). Not workspace members.
 
 ## Phase 2 (alerts) shape

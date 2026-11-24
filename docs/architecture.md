@@ -82,6 +82,10 @@ them.
 | Audio path | ffmpeg → 48 kHz stereo f32 PCM → songbird `RawAdapter` (needs symphonia's `pcm` feature) | fluxer-rust `play_music` (ffmpeg → s16 PCM → LiveKit) |
 | Who is in voice | GUILD_CREATE snapshot + VOICE_STATE_UPDATE (no serenity cache) | GUILD_SYNC / PASSIVE_UPDATES snapshots + VOICE_STATE_UPDATE |
 
+Each platform runs in its own task (`keep_running` in `crates/botsu/src/main.rs`): if it fails,
+for example a self-hosted Fluxer that's down, it's started again after 30 s, doubling to 10 min,
+while the other platforms keep running. Nothing makes the process exit except a shutdown signal.
+
 `main` creates the voice adapters before the platforms connect, hands them to `Music` and passes
 each to its platform's `run`, which fills in the connection and voice states. The Docker image
 carries a static ffmpeg binary (`mwader/static-ffmpeg`) because Debian's package adds ~650 MB of

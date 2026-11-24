@@ -16,6 +16,9 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
 # `cargo deb -p botsu` (release workflow). Doesn't start or enable the service on install: it
 # needs a token first (docs/install-linux.md).
 [package.metadata.deb]

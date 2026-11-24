@@ -16,7 +16,6 @@ use botsu_core::ytdlp::{self, YtDlp};
 use botsu_core::Bot;
 use botsu_discord::DiscordVoice;
 use botsu_fluxer::FluxerVoice;
-use tokio::task::JoinSet;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -110,33 +109,60 @@ async fn main() -> Result<()> {
     bot.enable_custom_commands(store.clone());
     let bot = Arc::new(bot);
 
-    // One task per platform. If any adapter dies, exit so Docker restarts us.
-    let mut adapters = JoinSet::new();
+    // One task per platform, each started again after a failure, so a platform that's down
+    // (for example a self-hosted Fluxer behind a proxy answering 502) never takes the others
+    // down with it.
     if let (Some(discord), Some(voice)) = (config.discord, discord_voice) {
         let bot = bot.clone();
-        adapters.spawn(async move { ("discord", botsu_discord::run(discord, bot, voice).await) });
+        tokio::spawn(keep_running("discord", move || {
+            botsu_discord::run(discord.clone(), bot.clone(), voice.clone())
+        }));
     }
     if let (Some(fluxer), Some(voice)) = (config.fluxer, fluxer_voice) {
         let bot = bot.clone();
-        adapters.spawn(async move { ("fluxer", botsu_fluxer::run(fluxer, bot, voice).await) });
+        tokio::spawn(keep_running("fluxer", move || {
+            botsu_fluxer::run(fluxer.clone(), bot.clone(), voice.clone())
+        }));
     }
 
     moderation::spawn_unban_scheduler(bot.clone(), mod_tools);
     alerts::spawn_pollers(bot.clone(), store, http, youtube_api, twitch, config.alerts);
 
-    tokio::select! {
-        Some(done) = adapters.join_next() => {
-            let (name, result) = done?;
-            match result {
-                // fluxer-rust returns Ok after an invalid-token close (4004).
-                Ok(()) => anyhow::bail!("{name} adapter stopped (check its token)"),
-                Err(e) => anyhow::bail!("{name} adapter failed: {e}"),
-            }
+    shutdown_signal().await;
+    tracing::info!("shutting down");
+    Ok(())
+}
+
+/// First wait before starting a failed platform again, and the longest wait.
+const RETRY_FIRST: Duration = Duration::from_secs(30);
+const RETRY_MAX: Duration = Duration::from_secs(10 * 60);
+
+/// Runs one platform for as long as the bot runs. When it stops, it's started again after a
+/// wait that doubles each time (30 s up to 10 min), back to 30 s once it had run for 10 minutes.
+async fn keep_running<F, Fut, E>(name: &'static str, mut start: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = std::result::Result<(), E>>,
+    E: std::fmt::Display,
+{
+    let mut wait = RETRY_FIRST;
+    loop {
+        let started = tokio::time::Instant::now();
+        match start().await {
+            // fluxer-rust returns Ok after an invalid-token close (4004).
+            Ok(()) => tracing::error!(platform = name, "stopped (check its token)"),
+            Err(e) => tracing::error!(platform = name, error = %e, "failed"),
         }
-        _ = shutdown_signal() => {
-            tracing::info!("shutting down");
-            Ok(())
+        if started.elapsed() >= RETRY_MAX {
+            wait = RETRY_FIRST;
         }
+        tracing::warn!(
+            platform = name,
+            retry_in_s = wait.as_secs(),
+            "starting it again later; the other platforms keep running"
+        );
+        tokio::time::sleep(wait).await;
+        wait = (wait * 2).min(RETRY_MAX);
     }
 }
 
@@ -186,5 +212,40 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     {
         let _ = ctrl_c.await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// A platform that fails twice and then stays up: started three times, with 30 s and then
+    /// 60 s in between, and nothing else is stopped by the failures.
+    #[tokio::test(start_paused = true)]
+    async fn failed_platform_is_started_again_with_growing_waits() {
+        let starts = Arc::new(AtomicU32::new(0));
+        let counter = starts.clone();
+        let task = tokio::spawn(keep_running("test", move || {
+            let n = counter.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if n < 2 {
+                    Err("502 Bad Gateway")
+                } else {
+                    std::future::pending::<std::result::Result<(), &str>>().await
+                }
+            }
+        }));
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(starts.load(Ordering::SeqCst), 1);
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        assert_eq!(starts.load(Ordering::SeqCst), 2, "first retry after 30 s");
+        tokio::time::sleep(Duration::from_secs(59)).await;
+        assert_eq!(starts.load(Ordering::SeqCst), 2, "second wait is 60 s");
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(starts.load(Ordering::SeqCst), 3);
+        assert!(!task.is_finished(), "keeps running");
+        task.abort();
     }
 }
