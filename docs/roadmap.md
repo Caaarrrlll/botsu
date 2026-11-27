@@ -97,6 +97,7 @@ Get the project building and publishing itself before the bigger features land.
 ### GitHub
 - [x] Create the GitHub repository; push `master`.
 - [x] **CI workflow** (`.github/workflows/ci.yml`, every push and PR): `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test`. `Swatinem/rust-cache` caches cargo and the libwebrtc download.
+- [x] Release channels: `master` → `caaarrrlll/botsu:latest`, `experimental` → `caaarrrlll/botsu:experimental`; which change goes where: [release-channels.md](release-channels.md).
 - [ ] Branch protection on `master`: CI must pass. Skipped for now: with one developer pushing straight to `master` it only adds friction. Revisit if others contribute.
 - [x] Dependabot (`.github/dependabot.yml`): weekly Cargo (minor/patch grouped), GitHub Actions and Docker base images. `fluxer-rust`, `livekit*`, `webrtc-sys*` and `libwebrtc` are ignored and bumped by hand.
 

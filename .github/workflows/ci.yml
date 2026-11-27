@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    # master publishes `latest`, experimental publishes `experimental` (docs/release-channels.md).
+    branches: [master, experimental]
     tags: ["v*"]
     # Pushes that only touch these don't change the image, so they don't build or publish it.
     # (Tag pushes always run: GitHub ignores path filters for tags.)
@@ -55,11 +56,11 @@ jobs:
         run: cargo test --workspace
 
   docker:
-    name: image (build; publish on master and tags)
+    name: image (build; publish on master, experimental and tags)
     needs: check
     # Pull requests build the image without publishing it, so Dockerfile changes are tested
     # before they reach master. Master and version tags publish.
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/experimental' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     env:
       # Forks (or this repo without the secret) build but don't publish.
@@ -79,7 +80,8 @@ jobs:
           username: caaarrrlll
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # latest + sha-<short> on master; 1.2.3 and 1.2 on tags v1.2.3. Also sets OCI labels
+      # latest + sha-<short> on master; experimental + sha-<short> on experimental; 1.2.3 and 1.2
+      # on tags v1.2.3. Also sets OCI labels
       # (source, revision, version) so Docker Hub and Unraid link back to the repo.
       - id: meta
         uses: docker/metadata-action@v6
@@ -87,6 +89,7 @@ jobs:
           images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=experimental,enable=${{ github.ref == 'refs/heads/experimental' }}
             type=sha,prefix=sha-,format=short
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

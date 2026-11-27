@@ -12,6 +12,11 @@ schema, adapter trait or alert rules change.
 - Releases (`v*` tags, .github/workflows/release.yml): Linux .tar.gz + .deb (cargo-deb metadata in
   crates/botsu/Cargo.toml) and Windows .zip. Guides: docs/install-linux.md, docs/install-windows.md.
 - Push to `master` publishes the image to Docker Hub (phase 3).
+- **Two release channels** (docs/release-channels.md): `master` → `latest`, `experimental` → `experimental`.
+  For every change, decide first: small/low-risk → `master`, then merge `master` into `experimental`;
+  big/risky (features that change servers, migrations, adapters, voice, alert delivery, startup, major
+  dependency bumps) → `experimental` only, merged into `master` after a live test. When unsure:
+  `experimental`. Say which channel and why when reporting a change.
 
 ## Layout
 - `crates/botsu-core`: platform-neutral core. `ChatAdapter` trait, `IncomingMessage`, command

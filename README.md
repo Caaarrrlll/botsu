@@ -74,7 +74,8 @@ Getting tokens and testing against live servers: [docs/testing.md](docs/testing.
 
 ## Docker / Unraid
 
-Image: `caaarrrlll/botsu:latest` on Docker Hub, built and published by GitHub Actions on every push
+Images: `caaarrrlll/botsu:latest` (stable) and `caaarrrlll/botsu:experimental` (changes being tried
+first; see [release channels](docs/release-channels.md)) on Docker Hub. `latest` is built and published by GitHub Actions on every push
 to `master` once the checks pass (`sha-<commit>` tags too, for rollbacks).
 Guides: [Unraid](docs/install-unraid.md) (template) · [any Docker host](docs/install-docker.md)
 (`docker run` / Compose) · [native Linux](docs/install-linux.md) (systemd; `.deb`, `.tar.gz` or
