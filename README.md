@@ -62,6 +62,8 @@ All configuration is environment variables; see [.env.example](.env.example).
 | `BOTSU_PREFIX` | no | `$`; a server can set its own with `setprefix` (mods) |
 | `BOTSU_OWNERS` | recommended | user IDs (any platform) of the bot's owners: they outrank everyone and alone may import alert lists, toggle Shorts and run the music test tools |
 | `BOTSU_INVITE_ADMIN` | no | `false`; `true` makes the invite links ask for Administrator |
+| `BOTSU_OTHER_INVITES` | no | the other channel's bot's invite links, so `invite` lists both bots ([release channels](docs/release-channels.md)) |
+| `BOTSU_CHANNEL` | no | `stable`; the experimental image sets `experimental`, which doubles the prefix (`$$`) |
 | `YOUTUBE_API_KEY` | recommended | YouTube Data API v3 key: @handles, live/upcoming stream detection |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | for Twitch alerts | from dev.twitch.tv; both or neither |
 | `BOTSU_DATA_DIR` | no | `data` (`/data` in Docker): SQLite database |

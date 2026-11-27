@@ -24,6 +24,7 @@ async fn main() -> Result<()> {
     let config = load_config().await?;
     tracing::info!(
         prefix = %config.prefix,
+        channel = if config.experimental { "experimental" } else { "stable" },
         data_dir = %config.data_dir.display(),
         "starting botsu {}",
         env!("CARGO_PKG_VERSION")
@@ -70,6 +71,11 @@ async fn main() -> Result<()> {
     };
 
     let mut bot = Bot::new(config.prefix.clone(), config.owners);
+    bot.set_release_channel(
+        config.experimental,
+        &config.base_prefix,
+        config.other_invites.clone(),
+    );
     let permissions = Arc::new(Permissions::new(store.clone()));
     bot.set_permissions(permissions.clone());
     bot.enable_server_prefixes(store.clone());

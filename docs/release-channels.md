@@ -31,6 +31,17 @@ Workflow:
 
 `experimental` is always `master` plus changes not released yet; it never falls behind `master`.
 
+## How the experimental bot differs
+
+The experimental image is built with `BOTSU_CHANNEL=experimental` (nothing to set by hand):
+
+- **Its prefix is doubled:** with `BOTSU_PREFIX` blank (`$`), its commands start with `$$`
+  (`$$help`). That way both bots can be on the same server without answering each other's
+  commands. A prefix set on a server with `setprefix` is that bot's own and isn't doubled.
+- **`invite` lists both bots**, each with what it's for, once each bot knows the other's links:
+  set `BOTSU_OTHER_INVITES` on each to the other bot's invite links (from its startup log). The
+  Unraid template has a field for it under the advanced settings.
+
 ## Running the experimental image
 
 Run it with its **own bot account** (a second application in the Discord Developer Portal and on

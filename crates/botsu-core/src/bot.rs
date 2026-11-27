@@ -37,6 +37,10 @@ impl Bot {
             custom: None,
         };
         bot.register(Ping);
+        bot.invites
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .base_prefix = bot.prefix.clone();
         bot.register(Invite(bot.invites.clone()));
         bot.register(Feedback);
         bot
@@ -147,10 +151,19 @@ impl Bot {
     /// Adapters call this once they know their invite link (`invite` lists them). A second call
     /// for the same platform replaces its link.
     pub fn register_invite(&self, platform: Platform, url: String) {
-        let mut links = self.invites.write().unwrap_or_else(|p| p.into_inner());
-        links.retain(|(p, _)| *p != platform);
-        links.push((platform, url));
-        links.sort_by_key(|(p, _)| p.to_string());
+        let mut info = self.invites.write().unwrap_or_else(|p| p.into_inner());
+        info.own.retain(|(p, _)| *p != platform);
+        info.own.push((platform, url));
+        info.own.sort_by_key(|(p, _)| p.to_string());
+    }
+
+    /// Which release channel this build is, its prefix before an experimental build doubles it,
+    /// and the other channel's bot's invite links, for `invite`.
+    pub fn set_release_channel(&self, experimental: bool, base_prefix: &str, others: Vec<String>) {
+        let mut info = self.invites.write().unwrap_or_else(|p| p.into_inner());
+        info.experimental = experimental;
+        info.base_prefix = base_prefix.to_owned();
+        info.others = others;
     }
 
     pub fn chat(&self, platform: Platform) -> Option<Arc<dyn ChatAdapter>> {
@@ -362,7 +375,7 @@ mod tests {
         bot.register_invite(Platform::Fluxer, "https://f/old".into());
         bot.register_invite(Platform::Discord, "https://d".into());
         bot.register_invite(Platform::Fluxer, "https://f/new".into());
-        let links = bot.invites.read().unwrap().clone();
+        let links = bot.invites.read().unwrap().own.clone();
         assert_eq!(
             links,
             vec![

@@ -103,6 +103,9 @@ jobs:
           push: ${{ env.PUBLISH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # The experimental image doubles the prefix and lists itself as experimental.
+          build-args: |
+            BOTSU_CHANNEL=${{ github.ref == 'refs/heads/experimental' && 'experimental' || 'stable' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

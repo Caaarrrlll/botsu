@@ -111,6 +111,12 @@ ENV BOTSU_DATA_DIR=/data \
     PUID=99 \
     PGID=100
 
+# Release channel (docs/release-channels.md): CI builds the experimental image with
+# BOTSU_CHANNEL=experimental, which doubles the command prefix ($ becomes $$) so both bots can
+# share a server. Set late, so the stable and experimental builds share every layer above.
+ARG BOTSU_CHANNEL=stable
+ENV BOTSU_CHANNEL=${BOTSU_CHANNEL}
+
 RUN mkdir /data
 
 VOLUME /data
