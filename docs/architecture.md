@@ -277,7 +277,8 @@ everyone.
 
 | Command | Level |
 |---|---|
-| `ping`, `help`, `tube`/`twitch`/`freegames` `add`/`list`/`remove` | everyone |
+| `ping`, `help`, `tube`/`twitch` `add`/`list`/`remove` | everyone |
+| `freegames` (all subcommands) | mod (`mention everyone`/`here`: admin) |
 | `mod cleanup` | mod |
 | `mod warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`, `untimeout`, `case`, `cases`, `reason`, `unwarn`, `bans` | mod (`reason` on someone else's case: admin) |
 | `mod warnings` | everyone for themselves; mod for others |

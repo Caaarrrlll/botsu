@@ -423,6 +423,7 @@ Settings: `FLUXER_URL` / `FLUXER_TOKEN` for the self-hosted instance as before, 
 |---|---|
 | `$freegames add #channel` posts a notice there and replies with what's free right now (not posted) | |
 | `$freegames list` shows Epic Games Store, Steam and GOG → the channel | |
+| A member without a mod or admin role gets "You need to be mod" for every `$freegames` subcommand, and help doesn't list it | |
 | A new free game (Epic changes Thursdays) posts an embed: store, "Free Game: <name>", Price with the old price struck out, Free until, the art; no text above it | |
 | A restart doesn't post it again | |
 | `$freegames mention @role` puts the role above the next embed; `$freegames message epic = {title} is free!` replaces the text | |

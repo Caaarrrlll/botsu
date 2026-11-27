@@ -1166,12 +1166,12 @@ impl FreeGamesCommand {
 
     fn usage(p: &str) -> String {
         format!(
-            "Free games (to keep) on Epic, Steam and GOG:\n\
+            "Free games (to keep) on Epic, Steam and GOG (mods and admins):\n\
              `{p}freegames add [epic steam gog] [#channel]`: all three if no store is given\n\
              `{p}freegames remove [epic steam gog] [#channel]`\n\
              `{p}freegames list`\n\
-             `{p}freegames message [store] [#channel] = <text>` / `off`: custom alert text (mods)\n\
-             `{p}freegames mention [store] [#channel] <@role | @user | everyone | here | off>` (mods; everyone/here: admins)"
+             `{p}freegames message [store] [#channel] = <text>` / `off`: custom alert text\n\
+             `{p}freegames mention [store] [#channel] <@role | @user | everyone | here | off>` (everyone/here: admins)"
         )
     }
 
@@ -1315,7 +1315,11 @@ impl Command for FreeGamesCommand {
         "Free games on Epic, Steam and GOG: add, remove, list, message, mention."
     }
 
-    // `message` and `mention` need mod; the rest is open to everyone.
+    // Every subcommand is for mods and admins (user's choice); `mention everyone/here`: admins.
+    fn level(&self) -> Level {
+        Level::Mod
+    }
+
     fn needs_level(&self) -> bool {
         true
     }
