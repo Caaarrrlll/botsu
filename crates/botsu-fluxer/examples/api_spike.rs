@@ -154,6 +154,7 @@ async fn main() {
         std::process::exit(2);
     }
     let config = FluxerConfig {
+        platform: botsu_core::Platform::Fluxer,
         token,
         endpoint: endpoint(),
         invite_admin: false,
@@ -172,7 +173,7 @@ async fn main() {
         args.kick = false;
         args.ban = false;
     }
-    let chat = FluxerChat::new(http.clone(), bot_id.clone());
+    let chat = FluxerChat::new(http.clone(), bot_id.clone(), botsu_core::Platform::Fluxer);
     let mut r = Report::default();
 
     // `new`: a throwaway role, deleted again at the end.

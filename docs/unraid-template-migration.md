@@ -150,3 +150,12 @@ Main page:
 | PGID | `PGID` | 100 (users) | |
 
 Any of these can also live in `botsu.env` instead. A value in the template wins over the file.
+
+## Later change: several Fluxer instances (experimental image)
+
+One new field, **Fluxer official token** (`FLUXER_OFFICIAL_TOKEN`): the bot's token from
+fluxer.com, to join servers on the official Fluxer next to your self-hosted instance. **Fluxer
+address** and **Fluxer token** now take comma-separated lists (same order), but a single address
+and token work as before, so nothing else needs changing. Add the field by hand (Option A above)
+or replace the template (Option B).
+

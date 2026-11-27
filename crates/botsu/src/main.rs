@@ -96,12 +96,16 @@ async fn main() -> Result<()> {
     // Voice adapters exist up front so the `audio` command can hold them; the platform tasks
     // below fill in their connections and voice states.
     let discord_voice = config.discord.as_ref().map(|_| DiscordVoice::new());
-    let fluxer_voice = config.fluxer.as_ref().map(|_| FluxerVoice::new());
+    let fluxer_voices: Vec<Arc<FluxerVoice>> = config
+        .fluxer
+        .iter()
+        .map(|f| FluxerVoice::new(f.platform))
+        .collect();
     let mut voices: Vec<Arc<dyn VoiceAdapter>> = Vec::new();
     if let Some(v) = &discord_voice {
         voices.push(v.clone());
     }
-    if let Some(v) = &fluxer_voice {
+    for v in &fluxer_voices {
         voices.push(v.clone());
     }
     let ytdlp = YtDlp::new(&config.data_dir, config.ytdlp.clone(), http.clone());
@@ -116,13 +120,14 @@ async fn main() -> Result<()> {
     // down with it.
     if let (Some(discord), Some(voice)) = (config.discord, discord_voice) {
         let bot = bot.clone();
-        tokio::spawn(keep_running("discord", move || {
+        tokio::spawn(keep_running("Discord".to_owned(), move || {
             botsu_discord::run(discord.clone(), bot.clone(), voice.clone())
         }));
     }
-    if let (Some(fluxer), Some(voice)) = (config.fluxer, fluxer_voice) {
+    // One task per Fluxer instance (self-hosted ones and the official one).
+    for (fluxer, voice) in config.fluxer.into_iter().zip(fluxer_voices) {
         let bot = bot.clone();
-        tokio::spawn(keep_running("fluxer", move || {
+        tokio::spawn(keep_running(fluxer.platform.to_string(), move || {
             botsu_fluxer::run(fluxer.clone(), bot.clone(), voice.clone())
         }));
     }
@@ -141,7 +146,7 @@ const RETRY_MAX: Duration = Duration::from_secs(10 * 60);
 
 /// Runs one platform for as long as the bot runs. When it stops, it's started again after a
 /// wait that doubles each time (30 s up to 10 min), back to 30 s once it had run for 10 minutes.
-async fn keep_running<F, Fut, E>(name: &'static str, mut start: F)
+async fn keep_running<F, Fut, E>(name: String, mut start: F)
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = std::result::Result<(), E>>,
@@ -228,7 +233,7 @@ mod tests {
     async fn failed_platform_is_started_again_with_growing_waits() {
         let starts = Arc::new(AtomicU32::new(0));
         let counter = starts.clone();
-        let task = tokio::spawn(keep_running("test", move || {
+        let task = tokio::spawn(keep_running("test".to_owned(), move || {
             let n = counter.fetch_add(1, Ordering::SeqCst);
             async move {
                 if n < 2 {

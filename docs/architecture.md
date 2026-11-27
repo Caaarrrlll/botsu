@@ -426,3 +426,12 @@ file order with overrides mapped to the new role IDs (@everyone → the new serv
 Permission bits are masked to the ones Fluxer defines (`FLUXER_PERMISSIONS`). Fluxer creates about
 10 roles or channels a minute; `FluxerChat::call` waits out 429 replies (`retry_after`).
 
+## Several Fluxer instances
+
+Each Fluxer instance is its own `Platform`: `Fluxer` (the first `FLUXER_URL` entry, or the official
+instance when `FLUXER_TOKEN` is given alone, as before), `FluxerMore(2..=9)` (further `FLUXER_URL`
+entries) and `FluxerOfficial` (`FLUXER_OFFICIAL_TOKEN`). Every instance gets its own adapter, voice
+adapter, task (`keep_running`) and invite link. `Platform::key()` is what the database and export
+files store (`fluxer`, `fluxer2`…, `fluxer-official`); it's fixed per instance, so existing data
+stays with the first instance and adding an instance never moves anyone's data.
+

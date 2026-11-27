@@ -24,7 +24,8 @@ schema, adapter trait or alert rules change.
   platform crate** (fluxer-rust, serenity, ...).
 - `crates/botsu-discord`: the only crate that touches `serenity` (0.12, gateway + REST, no cache).
   Builds a `DiscordChat` per event from `ctx.http`. Needs the privileged Message Content intent.
-- `crates/botsu-fluxer`: the only crate that touches `fluxer-rust` (lib name `fluxer`). Translates
+- `crates/botsu-fluxer`: the only crate that touches `fluxer-rust` (lib name `fluxer`). One adapter per Fluxer
+  instance (`FluxerConfig.platform`: `Fluxer`, `FluxerMore(n)`, `FluxerOfficial`; storage keys fixed per instance). Translates
   gateway events into core types; implements `ChatAdapter` over Fluxer REST. Fluxer breakage gets
   fixed here.
 - `crates/botsu`: the binary. Env config, logging, one task per adapter (`keep_running`): a platform

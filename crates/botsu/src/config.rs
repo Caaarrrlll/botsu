@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
+use botsu_core::adapter::MAX_FLUXER_INSTANCES;
 use botsu_core::alerts::AlertSettings;
+use botsu_core::Platform;
 use botsu_discord::DiscordConfig;
 use botsu_fluxer::{FluxerConfig, FluxerEndpoint};
 
@@ -40,7 +42,9 @@ pub struct Config {
     pub owners: Vec<String>,
     pub data_dir: PathBuf,
     pub discord: Option<DiscordConfig>,
-    pub fluxer: Option<FluxerConfig>,
+    /// Every Fluxer instance to connect to (self-hosted ones from `FLUXER_URL`, the official one
+    /// from `FLUXER_OFFICIAL_TOKEN`).
+    pub fluxer: Vec<FluxerConfig>,
     pub youtube_api_key: Option<String>,
     /// (client ID, client secret)
     pub twitch: Option<(String, String)>,
@@ -195,32 +199,9 @@ impl Config {
             invite_admin,
         });
 
-        // FLUXER_API_URL (explicit) wins over FLUXER_URL (discovered); neither means fluxer.app.
-        let endpoint = match (vars.get("FLUXER_API_URL"), vars.get("FLUXER_URL")) {
-            (Some(api), _) => FluxerEndpoint::ApiUrl(api),
-            (None, Some(instance)) => {
-                let Some(origin) = origin(&instance) else {
-                    bail!("FLUXER_URL must start with https:// (got {instance:?})");
-                };
-                if origin != instance.trim_end_matches('/') {
-                    // Common when copying the address bar from inside a channel.
-                    tracing::warn!(
-                        given = %instance,
-                        using = origin,
-                        "FLUXER_URL should be just the site address; ignoring the path"
-                    );
-                }
-                FluxerEndpoint::Instance(origin.to_owned())
-            }
-            (None, None) => FluxerEndpoint::Default,
-        };
-        let fluxer = vars.secret("FLUXER_TOKEN")?.map(|token| FluxerConfig {
-            token,
-            endpoint,
-            invite_admin,
-        });
+        let fluxer = fluxer_instances(vars, invite_admin)?;
 
-        if discord.is_none() && fluxer.is_none() {
+        if discord.is_none() && fluxer.is_empty() {
             return Ok(None);
         }
 
@@ -252,6 +233,106 @@ impl Config {
             ytdlp: vars.get("BOTSU_YTDLP").map(PathBuf::from),
         }))
     }
+}
+
+/// A comma-separated list (blank entries dropped).
+fn list(value: Option<String>) -> Vec<String> {
+    value
+        .map(|v| {
+            v.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The Fluxer instances to connect to:
+/// - `FLUXER_URL` (self-hosted addresses) and `FLUXER_TOKEN` (one token each, same order). The
+///   first is `Platform::Fluxer`, so data from before several instances existed stays with it.
+/// - `FLUXER_TOKEN` without `FLUXER_URL`: the official instance, as before (`Platform::Fluxer`).
+/// - `FLUXER_OFFICIAL_TOKEN`: the official instance as an instance of its own.
+/// - `FLUXER_API_URL`: skips discovery; only with a single instance from `FLUXER_TOKEN`.
+fn fluxer_instances(vars: &Vars, invite_admin: bool) -> Result<Vec<FluxerConfig>> {
+    let urls = list(vars.get("FLUXER_URL"));
+    let tokens = list(vars.secret("FLUXER_TOKEN")?);
+    let api = vars.get("FLUXER_API_URL");
+    let mut out = Vec::new();
+
+    if urls.is_empty() {
+        match tokens.as_slice() {
+            [] => {}
+            [token] => out.push(FluxerConfig {
+                platform: Platform::Fluxer,
+                token: token.clone(),
+                endpoint: api.map_or(FluxerEndpoint::Default, FluxerEndpoint::ApiUrl),
+                invite_admin,
+            }),
+            _ => bail!(
+                "FLUXER_TOKEN has {} tokens but FLUXER_URL has no addresses: give one address \
+                 per token, in the same order",
+                tokens.len()
+            ),
+        }
+    } else {
+        if urls.len() != tokens.len() {
+            bail!(
+                "FLUXER_URL has {} address(es) but FLUXER_TOKEN has {} token(s): give one token \
+                 per address, in the same order",
+                urls.len(),
+                tokens.len()
+            );
+        }
+        if api.is_some() && urls.len() > 1 {
+            bail!("FLUXER_API_URL only works with a single FLUXER_URL");
+        }
+        for (i, (url, token)) in urls.iter().zip(&tokens).enumerate() {
+            let Some(platform) = u8::try_from(i + 1).ok().and_then(Platform::fluxer_instance)
+            else {
+                bail!("FLUXER_URL lists more than {MAX_FLUXER_INSTANCES} instances");
+            };
+            let endpoint = match &api {
+                Some(api) => FluxerEndpoint::ApiUrl(api.clone()),
+                None => {
+                    let Some(origin) = origin(url) else {
+                        bail!("FLUXER_URL entries must start with https:// (got {url:?})");
+                    };
+                    if origin != url.trim_end_matches('/') {
+                        // Common when copying the address bar from inside a channel.
+                        tracing::warn!(
+                            given = %url,
+                            using = origin,
+                            "FLUXER_URL should be just the site address; ignoring the path"
+                        );
+                    }
+                    FluxerEndpoint::Instance(origin.to_owned())
+                }
+            };
+            out.push(FluxerConfig {
+                platform,
+                token: token.clone(),
+                endpoint,
+                invite_admin,
+            });
+        }
+    }
+
+    if let Some(token) = vars.secret("FLUXER_OFFICIAL_TOKEN")? {
+        if urls.is_empty() && !tokens.is_empty() {
+            bail!(
+                "FLUXER_TOKEN without FLUXER_URL already means the official Fluxer instance; \
+                 use either that or FLUXER_OFFICIAL_TOKEN, not both"
+            );
+        }
+        out.push(FluxerConfig {
+            platform: Platform::FluxerOfficial,
+            token,
+            endpoint: FluxerEndpoint::Default,
+            invite_admin,
+        });
+    }
+    Ok(out)
 }
 
 /// `"123, 456 789"` → `["123", "456", "789"]`. IDs from any platform can be mixed.
@@ -301,6 +382,89 @@ mod tests {
         assert_eq!((stable.prefix.as_str(), stable.experimental), ("$", false));
         let exp = load(&[("BOTSU_CHANNEL", "experimental"), ("BOTSU_PREFIX", "!")]);
         assert_eq!((exp.prefix.as_str(), exp.experimental), ("!!", true));
+    }
+
+    #[test]
+    fn fluxer_instances_from_lists() {
+        // Only meaningful when the test's environment doesn't set Fluxer variables itself.
+        let env_set = [
+            "FLUXER_URL",
+            "FLUXER_TOKEN",
+            "FLUXER_OFFICIAL_TOKEN",
+            "FLUXER_API_URL",
+        ]
+        .iter()
+        .any(|k| std::env::var(k).is_ok());
+        if env_set {
+            return;
+        }
+        let vars = |pairs: &[(&str, &str)]| {
+            Vars::new(
+                pairs
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            )
+        };
+        let platforms = |pairs: &[(&str, &str)]| -> Vec<Platform> {
+            fluxer_instances(&vars(pairs), false)
+                .unwrap()
+                .iter()
+                .map(|f| f.platform)
+                .collect()
+        };
+
+        // One self-hosted instance: still Platform::Fluxer (existing data stays with it).
+        assert_eq!(
+            platforms(&[("FLUXER_URL", "https://a.example"), ("FLUXER_TOKEN", "t1")]),
+            [Platform::Fluxer]
+        );
+        // A token without a URL: the official instance, as before.
+        let legacy = fluxer_instances(&vars(&[("FLUXER_TOKEN", "t1")]), false).unwrap();
+        assert!(matches!(legacy[0].endpoint, FluxerEndpoint::Default));
+        assert_eq!(legacy[0].platform, Platform::Fluxer);
+        // Two self-hosted plus the official one.
+        let all = fluxer_instances(
+            &vars(&[
+                (
+                    "FLUXER_URL",
+                    "https://a.example, https://b.example/channels/1",
+                ),
+                ("FLUXER_TOKEN", "t1,t2"),
+                ("FLUXER_OFFICIAL_TOKEN", "t3"),
+            ]),
+            false,
+        )
+        .unwrap();
+        let got: Vec<(Platform, &str)> =
+            all.iter().map(|f| (f.platform, f.token.as_str())).collect();
+        assert_eq!(
+            got,
+            [
+                (Platform::Fluxer, "t1"),
+                (Platform::FluxerMore(2), "t2"),
+                (Platform::FluxerOfficial, "t3")
+            ]
+        );
+        assert!(
+            matches!(&all[1].endpoint, FluxerEndpoint::Instance(o) if o == "https://b.example"),
+            "path dropped"
+        );
+        // Mismatched lists, or the official instance twice: refused.
+        assert!(fluxer_instances(
+            &vars(&[
+                ("FLUXER_URL", "https://a.example,https://b.example"),
+                ("FLUXER_TOKEN", "t1")
+            ]),
+            false
+        )
+        .is_err());
+        assert!(fluxer_instances(
+            &vars(&[("FLUXER_TOKEN", "t1"), ("FLUXER_OFFICIAL_TOKEN", "t2")]),
+            false
+        )
+        .is_err());
+        assert!(fluxer_instances(&vars(&[]), false).unwrap().is_empty());
     }
 
     #[test]

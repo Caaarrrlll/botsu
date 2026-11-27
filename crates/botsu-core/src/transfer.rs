@@ -169,10 +169,7 @@ fn kind_label(k: AlertKind) -> &'static str {
 }
 
 fn platform_name(p: Platform) -> &'static str {
-    match p {
-        Platform::Discord => "discord",
-        Platform::Fluxer => "fluxer",
-    }
+    p.key()
 }
 
 /// Reads a file, refusing other formats and oversized ones.
@@ -655,11 +652,9 @@ pub fn plan(
     } else {
         format!("**{}**", escape_md(&export.from.guild_name))
     };
-    let platform = match export.from.platform.as_str() {
-        "discord" => "Discord",
-        "fluxer" => "Fluxer",
-        other => other,
-    };
+    let platform = Platform::from_key(&export.from.platform)
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| export.from.platform.clone());
     Plan {
         replace,
         subs,

@@ -41,6 +41,8 @@ pub enum FluxerEndpoint {
 
 #[derive(Debug, Clone)]
 pub struct FluxerConfig {
+    /// Which Fluxer instance this is to the core (`Platform::Fluxer`, `FluxerOfficial`, …).
+    pub platform: Platform,
     pub token: String,
     pub endpoint: FluxerEndpoint,
     /// The invite link requests Administrator instead of the specific permissions.
@@ -52,11 +54,17 @@ pub struct FluxerChat {
     http: Arc<Http>,
     /// The bot's user ID (from the login check).
     bot_id: String,
+    /// Which Fluxer instance this is.
+    platform: Platform,
 }
 
 impl FluxerChat {
-    pub fn new(http: Arc<Http>, bot_id: String) -> Self {
-        Self { http, bot_id }
+    pub fn new(http: Arc<Http>, bot_id: String, platform: Platform) -> Self {
+        Self {
+            http,
+            bot_id,
+            platform,
+        }
     }
 
     /// A REST call with an optional JSON body and audit-log reason. fluxer-rust's moderation
@@ -177,7 +185,7 @@ fn err(e: impl std::fmt::Display) -> Error {
 #[async_trait]
 impl ChatAdapter for FluxerChat {
     fn platform(&self) -> Platform {
-        Platform::Fluxer
+        self.platform
     }
 
     fn capabilities(&self) -> Capabilities {
@@ -655,6 +663,8 @@ pub struct FluxerVoice {
     playback: std::sync::Mutex<HashMap<String, Playback>>,
     /// guild → volume in percent, shared with that server's player (it scales every frame).
     volumes: std::sync::Mutex<HashMap<String, Arc<AtomicU16>>>,
+    /// Which Fluxer instance this is.
+    platform: Platform,
 }
 
 /// One server's running playback task and its pause flag.
@@ -664,13 +674,14 @@ struct Playback {
 }
 
 impl FluxerVoice {
-    pub fn new() -> Arc<Self> {
+    pub fn new(platform: Platform) -> Arc<Self> {
         Arc::new(Self {
             ctx: Default::default(),
             states: Default::default(),
             conns: Default::default(),
             playback: Default::default(),
             volumes: Default::default(),
+            platform,
         })
     }
 
@@ -731,7 +742,7 @@ impl FluxerVoice {
 #[async_trait]
 impl VoiceAdapter for FluxerVoice {
     fn platform(&self) -> Platform {
-        Platform::Fluxer
+        self.platform
     }
 
     async fn user_channel(&self, guild_id: &str, user_id: &str) -> Option<String> {
@@ -910,7 +921,7 @@ impl EventHandler for Handler {
     }
 
     async fn on_message(&self, _ctx: Context, msg: Message) {
-        let Some(message) = translate(msg) else {
+        let Some(message) = translate(msg, self.chat.platform()) else {
             return;
         };
         // Don't hold up the gateway loop while a command runs.
@@ -920,9 +931,9 @@ impl EventHandler for Handler {
     }
 }
 
-fn translate(msg: Message) -> Option<IncomingMessage> {
+fn translate(msg: Message, platform: Platform) -> Option<IncomingMessage> {
     Some(IncomingMessage {
-        platform: Platform::Fluxer,
+        platform,
         guild_id: msg.guild_id,
         channel_id: msg.channel_id?,
         message_id: msg.id,
@@ -961,10 +972,10 @@ pub async fn run(
         "{webapp}/oauth2/authorize?client_id={bot_id}&scope=bot&permissions={}",
         botsu_core::invite_permissions(config.invite_admin)
     );
-    tracing::info!("Fluxer invite link: {invite}");
-    bot.register_invite(Platform::Fluxer, invite);
+    tracing::info!(platform = %config.platform, "Fluxer invite link: {invite}");
+    bot.register_invite(config.platform, invite);
 
-    let chat: Arc<dyn ChatAdapter> = Arc::new(FluxerChat::new(http, bot_id));
+    let chat: Arc<dyn ChatAdapter> = Arc::new(FluxerChat::new(http, bot_id, config.platform));
     bot.register_chat(chat.clone());
     let mut client = Client::builder(&config.token)
         .api_url(&api_url)

@@ -134,18 +134,11 @@ impl AlertKind {
 }
 
 fn platform_str(p: Platform) -> &'static str {
-    match p {
-        Platform::Discord => "discord",
-        Platform::Fluxer => "fluxer",
-    }
+    p.key()
 }
 
 fn parse_platform(s: &str) -> Option<Platform> {
-    match s {
-        "discord" => Some(Platform::Discord),
-        "fluxer" => Some(Platform::Fluxer),
-        _ => None,
-    }
+    Platform::from_key(s)
 }
 
 #[derive(Debug, Clone)]

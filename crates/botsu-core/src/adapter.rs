@@ -6,18 +6,77 @@ use async_trait::async_trait;
 
 use crate::error::{Error, Result};
 
+/// Where a message came from or goes to. Each Fluxer instance botsu connects to is a platform of
+/// its own, so IDs and settings never mix between instances.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Platform {
+    /// The first Fluxer instance: the first `FLUXER_URL` entry, or the official instance when
+    /// `FLUXER_TOKEN` is given without a URL (as before several instances existed).
     Fluxer,
     Discord,
+    /// The official Fluxer instance, through `FLUXER_OFFICIAL_TOKEN`.
+    FluxerOfficial,
+    /// Further `FLUXER_URL` entries: 2 to [`MAX_FLUXER_INSTANCES`].
+    FluxerMore(u8),
+}
+
+/// Most self-hosted Fluxer instances (`FLUXER_URL` entries).
+pub const MAX_FLUXER_INSTANCES: u8 = 9;
+
+/// Storage keys of `FluxerMore(2..=9)`.
+const FLUXER_MORE_KEYS: [&str; 8] = [
+    "fluxer2", "fluxer3", "fluxer4", "fluxer5", "fluxer6", "fluxer7", "fluxer8", "fluxer9",
+];
+
+impl Platform {
+    /// The self-hosted Fluxer instance at position `n` (1-based) in `FLUXER_URL`.
+    pub fn fluxer_instance(n: u8) -> Option<Platform> {
+        match n {
+            1 => Some(Platform::Fluxer),
+            2..=MAX_FLUXER_INSTANCES => Some(Platform::FluxerMore(n)),
+            _ => None,
+        }
+    }
+
+    /// The name stored in the database and export files. Fixed per instance, so data never
+    /// moves to another instance when the list of instances changes.
+    pub fn key(self) -> &'static str {
+        match self {
+            Platform::Discord => "discord",
+            Platform::Fluxer => "fluxer",
+            Platform::FluxerOfficial => "fluxer-official",
+            Platform::FluxerMore(n) => FLUXER_MORE_KEYS
+                .get(usize::from(n).wrapping_sub(2))
+                .copied()
+                .unwrap_or("fluxer-unknown"),
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Platform> {
+        match key {
+            "discord" => Some(Platform::Discord),
+            "fluxer" => Some(Platform::Fluxer),
+            "fluxer-official" => Some(Platform::FluxerOfficial),
+            other => FLUXER_MORE_KEYS
+                .iter()
+                .position(|k| *k == other)
+                .map(|i| Platform::FluxerMore(i as u8 + 2)),
+        }
+    }
+
+    pub fn is_fluxer(self) -> bool {
+        self != Platform::Discord
+    }
 }
 
 impl fmt::Display for Platform {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Platform::Fluxer => "Fluxer",
-            Platform::Discord => "Discord",
-        })
+        match self {
+            Platform::Fluxer => f.write_str("Fluxer"),
+            Platform::Discord => f.write_str("Discord"),
+            Platform::FluxerOfficial => f.write_str("Fluxer (official)"),
+            Platform::FluxerMore(n) => write!(f, "Fluxer {n}"),
+        }
     }
 }
 
@@ -423,5 +482,31 @@ pub trait ChatAdapter: Send + Sync {
             platform: self.platform(),
             op: "timeout",
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn platform_keys_round_trip_and_stay_fixed() {
+        let all = [
+            Platform::Discord,
+            Platform::Fluxer,
+            Platform::FluxerOfficial,
+            Platform::FluxerMore(2),
+            Platform::FluxerMore(9),
+        ];
+        for p in all {
+            assert_eq!(Platform::from_key(p.key()), Some(p), "{p}");
+        }
+        // Existing data stays on the first instance.
+        assert_eq!(Platform::Fluxer.key(), "fluxer");
+        assert_eq!(Platform::fluxer_instance(1), Some(Platform::Fluxer));
+        assert_eq!(Platform::fluxer_instance(3), Some(Platform::FluxerMore(3)));
+        assert_eq!(Platform::fluxer_instance(10), None);
+        assert_eq!(Platform::from_key("fluxer10"), None);
+        assert_eq!(Platform::FluxerOfficial.to_string(), "Fluxer (official)");
     }
 }

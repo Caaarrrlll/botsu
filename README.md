@@ -56,9 +56,10 @@ All configuration is environment variables; see [.env.example](.env.example).
 | Variable | Required | Default |
 |---|---|---|
 | `DISCORD_TOKEN` | one of the two | enables Discord |
-| `FLUXER_TOKEN` | one of the two | enables Fluxer |
-| `FLUXER_URL` | no | your self-hosted instance's web address; API URL is discovered. Unset = fluxer.app |
-| `FLUXER_API_URL` | no | explicit API base with `/v1`; overrides `FLUXER_URL` |
+| `FLUXER_TOKEN` | one of the two | Fluxer bot token(s): one per `FLUXER_URL` address, comma-separated, same order; without `FLUXER_URL`, a single token for official Fluxer |
+| `FLUXER_URL` | no | self-hosted instances' web addresses, comma-separated; API URLs are discovered |
+| `FLUXER_OFFICIAL_TOKEN` | no | the bot's token from official Fluxer (fluxer.com), next to self-hosted instances |
+| `FLUXER_API_URL` | no | explicit API base with `/v1`; single instance only; overrides `FLUXER_URL` |
 | `BOTSU_PREFIX` | no | `$`; a server can set its own with `setprefix` (mods) |
 | `BOTSU_OWNERS` | recommended | user IDs (any platform) of the bot's owners: they outrank everyone and alone may import alert lists, toggle Shorts and run the music test tools |
 | `BOTSU_INVITE_ADMIN` | no | `false`; `true` makes the invite links ask for Administrator |
