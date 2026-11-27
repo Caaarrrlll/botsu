@@ -71,11 +71,7 @@ async fn main() -> Result<()> {
     };
 
     let mut bot = Bot::new(config.prefix.clone(), config.owners);
-    bot.set_release_channel(
-        config.experimental,
-        &config.base_prefix,
-        config.other_invites.clone(),
-    );
+    bot.set_release_channel(config.experimental);
     let permissions = Arc::new(Permissions::new(store.clone()));
     bot.set_permissions(permissions.clone());
     bot.enable_server_prefixes(store.clone());

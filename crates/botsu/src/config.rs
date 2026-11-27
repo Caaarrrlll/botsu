@@ -35,12 +35,8 @@ const SETTINGS_TEMPLATE: &str = concat!(
 pub struct Config {
     /// The command prefix in use: `BOTSU_PREFIX` (or `$`), doubled on the experimental channel.
     pub prefix: String,
-    /// `BOTSU_PREFIX` (or `$`) before doubling.
-    pub base_prefix: String,
     /// `BOTSU_CHANNEL=experimental`, set by the experimental Docker image.
     pub experimental: bool,
-    /// `BOTSU_OTHER_INVITES`: the other channel's bot's invite links, listed by `invite`.
-    pub other_invites: Vec<String>,
     pub owners: Vec<String>,
     pub data_dir: PathBuf,
     pub discord: Option<DiscordConfig>,
@@ -187,22 +183,11 @@ impl Config {
             Some("experimental") => true,
             Some(other) => bail!("BOTSU_CHANNEL must be stable or experimental (got {other:?})"),
         };
-        let base_prefix = prefix.clone();
         let prefix = if experimental {
             format!("{prefix}{prefix}")
         } else {
             prefix
         };
-        let other_invites: Vec<String> = vars
-            .get("BOTSU_OTHER_INVITES")
-            .map(|v| {
-                v.split([',', ' ', ';'])
-                    .map(str::trim)
-                    .filter(|s| s.starts_with("https://"))
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default();
 
         let invite_admin = vars.flag("BOTSU_INVITE_ADMIN")?;
         let discord = vars.secret("DISCORD_TOKEN")?.map(|token| DiscordConfig {
@@ -250,9 +235,7 @@ impl Config {
 
         Ok(Some(Self {
             prefix,
-            base_prefix,
             experimental,
-            other_invites,
             owners: vars
                 .get("BOTSU_OWNERS")
                 .map(|v| parse_owners(&v))
@@ -299,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn experimental_doubles_the_prefix_and_reads_other_invites() {
+    fn experimental_doubles_the_prefix() {
         let load = |pairs: &[(&str, &str)]| {
             let mut m: HashMap<String, String> = pairs
                 .iter()
@@ -317,12 +300,7 @@ mod tests {
         let stable = load(&[]);
         assert_eq!((stable.prefix.as_str(), stable.experimental), ("$", false));
         let exp = load(&[("BOTSU_CHANNEL", "experimental"), ("BOTSU_PREFIX", "!")]);
-        assert_eq!((exp.prefix.as_str(), exp.base_prefix.as_str()), ("!!", "!"));
-        let other = load(&[(
-            "BOTSU_OTHER_INVITES",
-            "https://discord.com/oauth2/authorize?client_id=1, junk https://f.example/o?c=2",
-        )]);
-        assert_eq!(other.other_invites.len(), 2);
+        assert_eq!((exp.prefix.as_str(), exp.experimental), ("!!", true));
     }
 
     #[test]

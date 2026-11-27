@@ -284,71 +284,44 @@ impl Command for Feedback {
     }
 }
 
-/// What `invite` shows. The adapters add this bot's own links when they connect
-/// ([`crate::Bot::register_invite`]); the rest comes from the config.
+/// What `invite` shows. The adapters add the links when they connect
+/// ([`crate::Bot::register_invite`]).
 #[derive(Debug, Default)]
 pub(crate) struct InviteInfo {
     /// This bot's links, one per connected platform, sorted by platform name.
     pub own: Vec<(Platform, String)>,
-    /// This build is the experimental channel (`BOTSU_CHANNEL`).
+    /// This is the experimental build (`BOTSU_CHANNEL`).
     pub experimental: bool,
-    /// The other channel's bot's invite links (`BOTSU_OTHER_INVITES`).
-    pub others: Vec<String>,
-    /// The configured prefix, before an experimental build doubles it.
-    pub base_prefix: String,
+    /// The prefix in use (doubled on the experimental build).
+    pub prefix: String,
 }
 
 pub(crate) type InviteLinks = Arc<RwLock<InviteInfo>>;
 
-/// A link's platform, for the list: Discord's own domain, otherwise a Fluxer instance.
-fn platform_of(url: &str) -> &'static str {
-    if url.contains("discord.com/") || url.contains("discord.gg/") {
-        "Discord"
-    } else {
-        "Fluxer"
-    }
-}
-
-/// The `invite` reply: the stable bot first, then the experimental one, each with what it's for.
-/// Links in <...> so the apps don't show a preview for each.
+/// The `invite` reply for the running build. Links in <...> so the apps don't show a preview for
+/// each.
 pub(crate) fn invite_text(info: &InviteInfo) -> String {
-    let own: Vec<String> = info
+    if info.own.is_empty() {
+        return "No platform is connected yet, so there's no invite link.".to_owned();
+    }
+    let links: Vec<String> = info
         .own
         .iter()
         .map(|(platform, url)| format!("• {platform}: <{url}>"))
         .collect();
-    let others: Vec<String> = info
-        .others
-        .iter()
-        .map(|url| format!("• {}: <{url}>", platform_of(url)))
-        .collect();
-    let (stable, experimental) = if info.experimental {
-        (others, own)
+    let intro = if info.experimental {
+        format!(
+            "Add **botsu experimental** to a server. This is the experimental build: it gets new \
+             features first and may be unstable. Its commands start with `{}`.",
+            info.prefix
+        )
     } else {
-        (own, others)
+        "Add botsu to a server:".to_owned()
     };
-    if stable.is_empty() && experimental.is_empty() {
-        return "No platform is connected yet, so there's no invite link.".to_owned();
-    }
-    let p = &info.base_prefix;
-    let mut out = String::from("Add botsu to a server:");
-    if !stable.is_empty() {
-        out.push_str(&format!(
-            "\n**botsu**: the stable bot, for everyday use. Commands start with `{p}`.\n{}",
-            stable.join("\n")
-        ));
-    }
-    if !experimental.is_empty() {
-        out.push_str(&format!(
-            "\n**botsu experimental**: gets new features first and can break now and then. \
-             Commands start with `{p}{p}`, so both bots can share a server.\n{}",
-            experimental.join("\n")
-        ));
-    }
-    out
+    format!("{intro}\n{}", links.join("\n"))
 }
 
-/// `invite`: the links to add the bot (and its other channel, if configured) to a server.
+/// `invite`: the links to add this bot to a server.
 pub(crate) struct Invite(pub(crate) InviteLinks);
 
 #[async_trait]
@@ -358,7 +331,7 @@ impl Command for Invite {
     }
 
     fn help(&self) -> &'static str {
-        "Links to add the bot to a server: the stable bot and the experimental one."
+        "Links to add the bot to a server, one per platform."
     }
 
     async fn run(&self, ctx: CommandContext) -> Result<()> {
@@ -373,49 +346,39 @@ mod tests {
     use super::parse;
 
     #[test]
-    fn invite_lists_both_channels() {
+    fn invite_for_the_running_build() {
         use super::{invite_text, InviteInfo};
         use crate::adapter::Platform;
         let mut info = InviteInfo {
-            own: vec![(
-                Platform::Discord,
-                "https://discord.com/oauth2/authorize?client_id=1".into(),
-            )],
-            experimental: false,
-            others: vec![
-                "https://discord.com/oauth2/authorize?client_id=2".into(),
-                "https://fluxer.example.org/oauth2/authorize?client_id=3".into(),
+            own: vec![
+                (
+                    Platform::Discord,
+                    "https://discord.com/oauth2/authorize?client_id=1".into(),
+                ),
+                (
+                    Platform::Fluxer,
+                    "https://fluxer.example.org/oauth2/authorize?client_id=1".into(),
+                ),
             ],
-            base_prefix: "$".into(),
+            experimental: false,
+            prefix: "$".into(),
         };
         let text = invite_text(&info);
-        let stable = text.find("**botsu**:").unwrap();
-        let exp = text.find("**botsu experimental**").unwrap();
-        assert!(stable < exp, "{text}");
-        assert!(text.contains("client_id=1>") && text[exp..].contains("client_id=2>"));
         assert!(
-            text[exp..].contains("• Fluxer: <https://fluxer.example.org/"),
+            text.starts_with("Add botsu to a server:\n• Discord: <https://discord.com/"),
             "{text}"
         );
-        assert!(text.contains("`$$`"), "{text}");
+        assert!(!text.contains("unstable"));
 
-        // On the experimental bot, its own links go under experimental.
         info.experimental = true;
-        let text = invite_text(&info);
-        let exp = text.find("**botsu experimental**").unwrap();
-        assert!(text[exp..].contains("client_id=1>") && !text[exp..].contains("client_id=2>"));
-
-        // Nothing configured: only this bot.
-        let info = InviteInfo {
-            own: vec![(Platform::Fluxer, "https://f/x".into())],
-            base_prefix: "$".into(),
-            ..InviteInfo::default()
-        };
+        info.prefix = "$$".into();
         let text = invite_text(&info);
         assert!(
-            text.contains("**botsu**:") && !text.contains("experimental"),
+            text.contains("experimental build") && text.contains("may be unstable"),
             "{text}"
         );
+        assert!(text.contains("`$$`") && text.contains("• Fluxer: <https://fluxer.example.org/"));
+
         assert_eq!(
             invite_text(&InviteInfo::default()),
             "No platform is connected yet, so there's no invite link."

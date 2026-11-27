@@ -40,7 +40,7 @@ impl Bot {
         bot.invites
             .write()
             .unwrap_or_else(|p| p.into_inner())
-            .base_prefix = bot.prefix.clone();
+            .prefix = bot.prefix.clone();
         bot.register(Invite(bot.invites.clone()));
         bot.register(Feedback);
         bot
@@ -157,13 +157,12 @@ impl Bot {
         info.own.sort_by_key(|(p, _)| p.to_string());
     }
 
-    /// Which release channel this build is, its prefix before an experimental build doubles it,
-    /// and the other channel's bot's invite links, for `invite`.
-    pub fn set_release_channel(&self, experimental: bool, base_prefix: &str, others: Vec<String>) {
-        let mut info = self.invites.write().unwrap_or_else(|p| p.into_inner());
-        info.experimental = experimental;
-        info.base_prefix = base_prefix.to_owned();
-        info.others = others;
+    /// Whether this is the experimental build, for `invite`.
+    pub fn set_release_channel(&self, experimental: bool) {
+        self.invites
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .experimental = experimental;
     }
 
     pub fn chat(&self, platform: Platform) -> Option<Arc<dyn ChatAdapter>> {

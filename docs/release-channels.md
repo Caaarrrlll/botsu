@@ -38,9 +38,8 @@ The experimental image is built with `BOTSU_CHANNEL=experimental` (nothing to se
 - **Its prefix is doubled:** with `BOTSU_PREFIX` blank (`$`), its commands start with `$$`
   (`$$help`). That way both bots can be on the same server without answering each other's
   commands. A prefix set on a server with `setprefix` is that bot's own and isn't doubled.
-- **`invite` lists both bots**, each with what it's for, once each bot knows the other's links:
-  set `BOTSU_OTHER_INVITES` on each to the other bot's invite links (from its startup log). The
-  Unraid template has a field for it under the advanced settings.
+- **`invite` says which build it is:** the stable bot gives its links as usual; the experimental
+  one says it's the experimental build, that it may be unstable, and which prefix it uses.
 
 ## Running the experimental image
 
