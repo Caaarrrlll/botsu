@@ -361,6 +361,14 @@ impl ChatAdapter for FluxerChat {
         if let Some(f) = &embed.footer {
             e["footer"] = serde_json::json!({ "text": f });
         }
+        if !embed.fields.is_empty() {
+            let fields: Vec<serde_json::Value> = embed
+                .fields
+                .iter()
+                .map(|(name, value)| serde_json::json!({ "name": name, "value": value, "inline": true }))
+                .collect();
+            e["fields"] = fields.into();
+        }
         let mut body = serde_json::json!({ "embeds": [e] });
         if !content.is_empty() {
             body["content"] = content.into();

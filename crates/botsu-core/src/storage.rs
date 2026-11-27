@@ -122,13 +122,26 @@ const MIGRATIONS: &[&str] = &[
 pub enum AlertKind {
     YouTube,
     Twitch,
+    /// Free games from one store (`source_id`: `epic`, `steam` or `gog`).
+    FreeGames,
 }
 
 impl AlertKind {
-    fn as_str(self) -> &'static str {
+    /// The `kind` stored in the database and used in exports.
+    pub fn as_str(self) -> &'static str {
         match self {
             AlertKind::YouTube => "youtube",
             AlertKind::Twitch => "twitch",
+            AlertKind::FreeGames => "freegames",
+        }
+    }
+
+    pub fn from_key(s: &str) -> Option<Self> {
+        match s {
+            "youtube" => Some(AlertKind::YouTube),
+            "twitch" => Some(AlertKind::Twitch),
+            "freegames" => Some(AlertKind::FreeGames),
+            _ => None,
         }
     }
 }
@@ -378,11 +391,7 @@ impl Store {
              FROM subscriptions {filter}"
         ))?;
         let rows = stmt.query_map(args, |r| {
-            let kind = match r.get::<_, String>(1)?.as_str() {
-                "youtube" => Some(AlertKind::YouTube),
-                "twitch" => Some(AlertKind::Twitch),
-                _ => None,
-            };
+            let kind = AlertKind::from_key(&r.get::<_, String>(1)?);
             // Rows for a kind or platform this build doesn't know are skipped, not fatal.
             let platform = parse_platform(&r.get::<_, String>(5)?);
             let (Some(kind), Some(platform)) = (kind, platform) else {

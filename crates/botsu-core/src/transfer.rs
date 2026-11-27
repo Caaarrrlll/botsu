@@ -153,18 +153,11 @@ pub struct Sub {
     pub mention: Option<String>,
 }
 
-fn kind_of(s: &str) -> Option<AlertKind> {
-    match s {
-        "youtube" => Some(AlertKind::YouTube),
-        "twitch" => Some(AlertKind::Twitch),
-        _ => None,
-    }
-}
-
 fn kind_label(k: AlertKind) -> &'static str {
     match k {
         AlertKind::YouTube => "YouTube",
         AlertKind::Twitch => "Twitch",
+        AlertKind::FreeGames => "Free games",
     }
 }
 
@@ -229,7 +222,7 @@ pub async fn build_export(
 
     let scope = Scope::Guild(guild_id);
     let mut subscriptions = Vec::new();
-    for kind in [AlertKind::YouTube, AlertKind::Twitch] {
+    for kind in [AlertKind::YouTube, AlertKind::Twitch, AlertKind::FreeGames] {
         for s in store.list_subscriptions(kind, platform, scope)? {
             note_channel(&s.channel_id);
             // User mentions are about people: left out.
@@ -241,11 +234,7 @@ pub async fn build_export(
                 note_role(m, &mut roles);
             }
             subscriptions.push(Sub {
-                kind: match kind {
-                    AlertKind::YouTube => "youtube",
-                    AlertKind::Twitch => "twitch",
-                }
-                .to_owned(),
+                kind: kind.as_str().to_owned(),
                 source_id: s.source_id,
                 source_name: s.source_name,
                 source_key: s.source_key,
@@ -500,7 +489,7 @@ pub fn plan(
     let mut subs = Vec::new();
 
     for s in &export.subscriptions {
-        let Some(kind) = kind_of(&s.kind) else {
+        let Some(kind) = AlertKind::from_key(&s.kind) else {
             lines.push(format!(
                 "• `{}` alert {}: unknown kind, skipped",
                 s.kind, s.source_name

@@ -123,6 +123,8 @@ pub struct Embed {
     pub image: Option<String>,
     pub color: Option<u32>,
     pub footer: Option<String>,
+    /// Short `(name, value)` pairs shown side by side under the text.
+    pub fields: Vec<(String, String)>,
 }
 
 /// A message from a channel's history (for cleanup).

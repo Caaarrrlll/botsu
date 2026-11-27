@@ -309,7 +309,15 @@ const HELP_SECTIONS: &[(&str, &[&str])] = &[
     ("Administration", &["admin", "mod", "set", "setprefix"]),
     (
         "Cool Things",
-        &["music", "cc", "invite", "tube", "twitch", "feedback"],
+        &[
+            "music",
+            "cc",
+            "invite",
+            "tube",
+            "twitch",
+            "freegames",
+            "feedback",
+        ],
     ),
 ];
 

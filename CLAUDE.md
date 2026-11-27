@@ -99,6 +99,8 @@ up to date as work lands.
   maxres/hq thumbnail, Twitch live frame 1280x720 with a cache-buster) unless `set embeds off`
   (`guild_settings.alert_embeds`); falls back to plain text. Text above an embed never has a bare link.
 - Adding a source that's already followed doesn't touch `seen_items` (the poller owns it).
+- Free games (`alerts/freegames.rs`, `freegames` command): GamerPower API, one subscription per store
+  (`source_id` epic|steam|gog), 30 min poll; a store's first poll only records what's running.
 
 ## fluxer-rust 0.2.1 notes (pinned with `=`; vendored with patches in vendor/fluxer-rust, see vendor/README.md)
 - Patches: `Guild.voice_states` (GUILD_CREATE), `FluxerVoiceConnection::play_input` (ffmpeg with reconnect

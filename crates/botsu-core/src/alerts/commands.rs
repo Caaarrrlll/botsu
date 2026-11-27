@@ -1,10 +1,12 @@
-//! `tube` and `twitch` commands: add, remove and list subscriptions for the current server.
+//! `tube`, `twitch` and `freegames` commands: add, remove and list subscriptions for the
+//! current server.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use super::freegames::{self, Shop};
 use super::import::{self, Target};
 use super::{
     escape_md, live_text, mention_text, parse_channel, twitch, youtube, BASELINE, PLACEHOLDERS,
@@ -1131,6 +1133,268 @@ impl Command for TwitchCommand {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+
+pub struct FreeGamesCommand {
+    store: Arc<Store>,
+    http: reqwest::Client,
+}
+
+/// `"epic gog"` → those stores; empty or `all` → every store. `Err` holds a word that isn't one.
+fn parse_shops(text: &str) -> std::result::Result<Vec<Shop>, String> {
+    let mut shops = Vec::new();
+    for word in text.split([' ', ',']).filter(|w| !w.is_empty()) {
+        if word.eq_ignore_ascii_case("all") {
+            return Ok(Shop::ALL.to_vec());
+        }
+        let shop = Shop::parse(word).ok_or_else(|| word.to_owned())?;
+        if !shops.contains(&shop) {
+            shops.push(shop);
+        }
+    }
+    Ok(if shops.is_empty() {
+        Shop::ALL.to_vec()
+    } else {
+        shops
+    })
+}
+
+impl FreeGamesCommand {
+    pub fn new(store: Arc<Store>, http: reqwest::Client) -> Self {
+        Self { store, http }
+    }
+
+    fn usage(p: &str) -> String {
+        format!(
+            "Free games (to keep) on Epic, Steam and GOG:\n\
+             `{p}freegames add [epic steam gog] [#channel]`: all three if no store is given\n\
+             `{p}freegames remove [epic steam gog] [#channel]`\n\
+             `{p}freegames list`\n\
+             `{p}freegames message [store] [#channel] = <text>` / `off`: custom alert text (mods)\n\
+             `{p}freegames mention [store] [#channel] <@role | @user | everyone | here | off>` (mods; everyone/here: admins)"
+        )
+    }
+
+    fn shops(ctx: &CommandContext, text: &str) -> Result<Vec<Shop>> {
+        parse_shops(text).map_err(|word| {
+            Error::Usage(format!(
+                "`{word}` isn't a store I follow. Use `epic`, `steam` or `gog`.\n{}",
+                Self::usage(&ctx.prefix)
+            ))
+        })
+    }
+
+    /// This server's free-games subscriptions for `shops`, narrowed to `channel` if given.
+    fn find_some(
+        &self,
+        ctx: &CommandContext,
+        shops: &[Shop],
+        channel: Option<&str>,
+    ) -> Result<Vec<Subscription>> {
+        let mut found = Vec::new();
+        for shop in shops {
+            found.extend(self.store.find_subscriptions(
+                AlertKind::FreeGames,
+                ctx.message.platform,
+                scope(ctx),
+                shop.key(),
+            )?);
+        }
+        let found = in_channel(found, channel);
+        if found.is_empty() {
+            let place = channel.map_or("here".to_owned(), |c| format!("in <#{c}>"));
+            return Err(Error::Usage(format!(
+                "No free games alerts for those stores {place}. See `{}freegames list`.",
+                ctx.prefix
+            )));
+        }
+        Ok(found)
+    }
+
+    async fn add(&self, ctx: &CommandContext, shops: &[Shop], target: &str) -> Result<()> {
+        let new: Vec<Shop> = shops
+            .iter()
+            .copied()
+            .filter(|s| {
+                !matches!(
+                    self.store.subscription_id(
+                        AlertKind::FreeGames,
+                        s.key(),
+                        ctx.message.platform,
+                        target
+                    ),
+                    Ok(Some(_))
+                )
+            })
+            .collect();
+        if new.is_empty() {
+            ctx.reply(&format!(
+                "<#{target}> already gets those free games; nothing changed."
+            ))
+            .await?;
+            return Ok(());
+        }
+        let names: Vec<&str> = new.iter().map(|s| s.name()).collect();
+        announce_in_target(
+            ctx,
+            target,
+            &format!(
+                "Free games on **{}** will be posted here.",
+                names.join(", ")
+            ),
+        )
+        .await?;
+
+        let mut running = Vec::new();
+        for &shop in &new {
+            // A store nobody followed yet: what's free now counts as posted. (If the lookup
+            // fails, the poller's first look records it instead.)
+            let games = freegames::current(&self.http, shop)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::info!(error = %e, shop = shop.key(), "free games lookup failed");
+                    Vec::new()
+                });
+            if !is_followed(&self.store, AlertKind::FreeGames, shop.key())? && !games.is_empty() {
+                for g in &games {
+                    self.store
+                        .mark_seen(AlertKind::FreeGames, shop.key(), &g.id.to_string())?;
+                }
+                self.store
+                    .mark_seen(AlertKind::FreeGames, shop.key(), BASELINE)?;
+            }
+            running.extend(games.iter().map(|g| {
+                format!(
+                    "• **{}** on {} (<{}>)",
+                    escape_md(&g.game()),
+                    shop.name(),
+                    g.open_giveaway_url
+                )
+            }));
+            self.store.add_subscription(&NewSubscription {
+                kind: AlertKind::FreeGames,
+                source_id: shop.key(),
+                source_name: shop.name(),
+                source_key: shop.key(),
+                platform: ctx.message.platform,
+                guild_id: ctx.message.guild_id.as_deref(),
+                channel_id: target,
+                created_by: &ctx.message.author.id,
+            })?;
+        }
+
+        let mut reply = format!(
+            "<#{target}> will get new free games on **{}**.",
+            names.join(", ")
+        );
+        if running.is_empty() {
+            reply.push_str(" Nothing is free there right now.");
+        } else {
+            running.truncate(15);
+            reply.push_str(&format!(
+                " Already free now (not posted):\n{}",
+                running.join("\n")
+            ));
+        }
+        ctx.reply(&reply).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Command for FreeGamesCommand {
+    fn name(&self) -> &'static str {
+        "freegames"
+    }
+
+    fn aliases(&self) -> &[&'static str] {
+        &["freegame", "free"]
+    }
+
+    fn help(&self) -> &'static str {
+        "Free games on Epic, Steam and GOG: add, remove, list, message, mention."
+    }
+
+    // `message` and `mention` need mod; the rest is open to everyone.
+    fn needs_level(&self) -> bool {
+        true
+    }
+
+    async fn run(&self, ctx: CommandContext) -> Result<()> {
+        let (sub, rest) = split_sub(&ctx);
+        match sub.as_str() {
+            "add" | "subscribe" => {
+                let (words, target) = split_channel(rest);
+                let shops = Self::shops(&ctx, &words)?;
+                let target = target.unwrap_or_else(|| ctx.message.channel_id.clone());
+                self.add(&ctx, &shops, &target).await
+            }
+            "remove" | "unsubscribe" | "delete" | "del" => {
+                let (words, channel) = split_channel(rest);
+                let shops = Self::shops(&ctx, &words)?;
+                let found = self.find_some(&ctx, &shops, channel.as_deref())?;
+                let ids: Vec<i64> = found.iter().map(|s| s.id).collect();
+                let n = self.store.delete_subscriptions(&ids)?;
+                ctx.reply(&format!("Removed {n} free games alert(s)."))
+                    .await?;
+                Ok(())
+            }
+            "message" | "text" => {
+                // `message off` alone resets every store.
+                let rest = if is_off(rest) {
+                    format!("all {rest}")
+                } else {
+                    rest.to_owned()
+                };
+                let (words, channel, arg) = parse_message(&rest);
+                let shops = Self::shops(&ctx, &words)?;
+                let found = self.find_some(&ctx, &shops, channel.as_deref())?;
+                set_message(&ctx, &self.store, ("Free games", "freegames"), found, arg).await
+            }
+            "mention" | "ping" => {
+                // The store is optional here: `mention @role` covers all of them.
+                let (words, channel, arg) = parse_mention(rest)
+                    .or_else(|| parse_mention(&format!("all {rest}")))
+                    .ok_or_else(|| Error::Usage(Self::usage(&ctx.prefix)))?;
+                let shops = Self::shops(&ctx, &words)?;
+                let found = self.find_some(&ctx, &shops, channel.as_deref())?;
+                set_mention(&ctx, &self.store, found, arg).await
+            }
+            "list" => {
+                let subs = self.store.list_subscriptions(
+                    AlertKind::FreeGames,
+                    ctx.message.platform,
+                    scope(&ctx),
+                )?;
+                let mentions: Vec<String> = subs.iter().filter_map(|s| s.mention.clone()).collect();
+                let names = mention_names(&ctx, &mentions).await;
+                let text = if subs.is_empty() {
+                    format!(
+                        "No free games alerts here yet. Add them with `{}freegames add`.",
+                        ctx.prefix
+                    )
+                } else {
+                    let lines: Vec<String> = subs
+                        .iter()
+                        .map(|s| {
+                            format!(
+                                "• **{}** → <#{}>{}",
+                                s.source_name,
+                                s.channel_id,
+                                list_extras(s, &names)
+                            )
+                        })
+                        .collect();
+                    format!("Free games alerts:\n{}", lines.join("\n"))
+                };
+                ctx.reply(&text).await?;
+                Ok(())
+            }
+            _ => Err(Error::Usage(Self::usage(&ctx.prefix))),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1219,6 +1483,17 @@ line two {url}",
             "!"
         ));
         assert!(!has_command_line("!important {title}", "!"));
+    }
+
+    #[test]
+    fn shop_args() {
+        assert_eq!(parse_shops("").unwrap(), Shop::ALL.to_vec());
+        assert_eq!(parse_shops("all").unwrap(), Shop::ALL.to_vec());
+        assert_eq!(
+            parse_shops("gog, epic gog").unwrap(),
+            vec![Shop::Gog, Shop::Epic]
+        );
+        assert_eq!(parse_shops("epic itch").unwrap_err(), "itch");
     }
 
     #[test]

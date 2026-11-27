@@ -134,8 +134,8 @@ platform.
 | Column | Type | Meaning |
 |---|---|---|
 | `id` | INTEGER PK | |
-| `kind` | TEXT | `youtube` or `twitch` |
-| `source_id` | TEXT | YouTube channel ID (`UC…`) or Twitch user ID (numeric, stable across renames) |
+| `kind` | TEXT | `youtube`, `twitch` or `freegames` |
+| `source_id` | TEXT | YouTube channel ID (`UC…`), Twitch user ID (numeric, stable across renames), or the store (`epic`, `steam`, `gog`) |
 | `source_name` | TEXT | Display name when subscribed (for lists) |
 | `source_key` | TEXT | Twitch login (for URLs, removal); for YouTube the `@handle` if one was given, else the channel ID |
 | `platform` | TEXT | `discord` or `fluxer`: which adapter posts it |
@@ -162,9 +162,9 @@ subscriptions of a source.
 
 | Column | Type | Meaning |
 |---|---|---|
-| `kind` | TEXT | `youtube` or `twitch` |
+| `kind` | TEXT | `youtube`, `twitch` or `freegames` |
 | `source_id` | TEXT | As in `subscriptions` |
-| `item_id` | TEXT | YouTube video ID or Twitch stream ID; `__baseline__` marks "subscribed" |
+| `item_id` | TEXT | YouTube video ID, Twitch stream ID or GamerPower giveaway ID; `__baseline__` marks "subscribed" |
 | `seen_at` | INTEGER | Unix seconds |
 
 Primary key `(kind, source_id, item_id)`. Rows older than a year are pruned.
@@ -209,6 +209,14 @@ are scraped.
 | Interval | `YOUTUBE_POLL_SECONDS` (300, min 60), ±10% jitter | `TWITCH_POLL_SECONDS` (120, min 30), ±10% jitter |
 | Item | video ID | stream ID (new for every broadcast) |
 | Input | `UC…` ID or channel link; `@handle` and `/user/` links via Data API `channels.list` | login or twitch.tv link (resolved to the user ID) |
+
+**Free games** (`alerts/freegames.rs`, command `freegames`): the GamerPower API
+(`gamerpower.com/api/giveaways?platform=<store>&type=game`, free, no key), one request per
+followed store every 30 minutes (fixed, ±10% jitter). Item: the giveaway ID. A store's first poll
+(or `freegames add` for a store nobody follows yet) marks what's running as seen, so subscribing
+never posts a backlog. The embed has the store as author, "Free Game: <name>", Price and Free
+until fields and the game art; there's no text above it unless a mention or custom text is set.
+GamerPower's Steam list includes key giveaways from other shops (Fanatical and similar).
 
 Each source is fetched once per cycle no matter how many channels subscribe to it. The feed is
 used for detection because polling every channel through the Data API would exceed the free
@@ -269,7 +277,7 @@ everyone.
 
 | Command | Level |
 |---|---|
-| `ping`, `help`, `tube`/`twitch` `add`/`list`/`remove` | everyone |
+| `ping`, `help`, `tube`/`twitch`/`freegames` `add`/`list`/`remove` | everyone |
 | `mod cleanup` | mod |
 | `mod warn`, `kick`, `ban`, `tempban`, `unban`, `timeout`, `untimeout`, `case`, `cases`, `reason`, `unwarn`, `bans` | mod (`reason` on someone else's case: admin) |
 | `mod warnings` | everyone for themselves; mod for others |

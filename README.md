@@ -26,6 +26,7 @@ release: [v0.1.0](https://github.com/Caaarrrlll/botsu/releases/tag/v0.1.0).
 | Area | State |
 |---|---|
 | Alerts (YouTube, Twitch) | live on both platforms |
+| Free games (Epic, Steam, GOG) | built; live test pending |
 | Music | live on both platforms |
 | Server tools | built; `cleanup` live-tested, the rest pending |
 | Moderation | built; live test pending |

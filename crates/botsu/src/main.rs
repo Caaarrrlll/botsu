@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use botsu_core::alerts::{self, twitch::Twitch, youtube::YouTubeApi, TubeCommand, TwitchCommand};
+use botsu_core::alerts::{
+    self, twitch::Twitch, youtube::YouTubeApi, FreeGamesCommand, TubeCommand, TwitchCommand,
+};
 use botsu_core::moderation::{self, ModTools};
 use botsu_core::music::{self, Music};
 use botsu_core::permissions::Permissions;
@@ -92,6 +94,7 @@ async fn main() -> Result<()> {
         youtube_api.clone(),
     ));
     bot.register(TwitchCommand::new(store.clone(), twitch.clone()));
+    bot.register(FreeGamesCommand::new(store.clone(), http.clone()));
 
     // Voice adapters exist up front so the `audio` command can hold them; the platform tasks
     // below fill in their connections and voice states.

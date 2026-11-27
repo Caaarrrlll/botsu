@@ -1,10 +1,12 @@
-//! Alerts: YouTube uploads (Red's Tube cog) and Twitch live streams (Red's streams cog).
+//! Alerts: YouTube uploads (Red's Tube cog), Twitch live streams (Red's streams cog) and free
+//! games on Epic, Steam and GOG.
 //!
-//! Subscriptions are stored per target channel. Each source (YouTube channel, Twitch user) is
+//! Subscriptions are stored per target channel. Each source (YouTube channel, Twitch user, store) is
 //! polled once no matter how many channels subscribe to it, and each item (video, stream) is
 //! recorded as seen so it's posted once, also across restarts.
 
 mod commands;
+pub mod freegames;
 pub mod import;
 pub mod twitch;
 pub mod youtube;
@@ -15,7 +17,7 @@ use std::time::Duration;
 
 use time::OffsetDateTime;
 
-pub use commands::{TubeCommand, TwitchCommand};
+pub use commands::{FreeGamesCommand, TubeCommand, TwitchCommand};
 
 use crate::adapter::Embed;
 use crate::bot::Bot;
@@ -31,6 +33,8 @@ const STREAM_RESTART_GRACE_SECS: i64 = 15 * 60;
 const SEEN_RETENTION_SECS: i64 = 365 * 24 * 3600;
 /// Marker recorded at subscribe time, so a source's first real item counts as new.
 pub(crate) const BASELINE: &str = "__baseline__";
+/// Free games change about once a day; GamerPower asks for no more than this.
+const FREE_GAMES_INTERVAL: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Clone)]
 pub struct AlertSettings {
@@ -58,7 +62,7 @@ pub fn spawn_pollers(
     settings: AlertSettings,
 ) {
     {
-        let (bot, store) = (bot.clone(), store.clone());
+        let (bot, store, http) = (bot.clone(), store.clone(), http.clone());
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(15)).await;
             loop {
@@ -69,6 +73,18 @@ pub fn spawn_pollers(
                     tracing::warn!(error = %e, "pruning seen items failed");
                 }
                 tokio::time::sleep(jitter(settings.youtube_interval)).await;
+            }
+        });
+    }
+    {
+        let (bot, store, http) = (bot.clone(), store.clone(), http.clone());
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(20)).await;
+            loop {
+                if let Err(e) = poll_free_games(&bot, &store, &http).await {
+                    tracing::error!(error = %e, "free games poll failed");
+                }
+                tokio::time::sleep(jitter(FREE_GAMES_INTERVAL)).await;
             }
         });
     }
@@ -280,6 +296,7 @@ pub(crate) enum Event {
     YouTubeLive,
     YouTubeWasLive,
     TwitchLive,
+    FreeGame,
 }
 
 impl Event {
@@ -290,6 +307,7 @@ impl Event {
             Event::YouTubeLive => "is live on YouTube",
             Event::YouTubeWasLive => "was live on YouTube",
             Event::TwitchLive => "is live on Twitch",
+            Event::FreeGame => "has a free game",
         }
     }
 }
@@ -302,8 +320,11 @@ pub(crate) struct Alert {
     pub url: String,
     /// Twitch category; empty for YouTube.
     pub game: String,
-    /// Large image for the embed (YouTube thumbnail, Twitch live frame).
+    /// Large image for the embed (YouTube thumbnail, Twitch live frame, game art).
     pub image: Option<String>,
+    /// Free games: the store, and the embed's price and end-date fields.
+    pub shop: Option<freegames::Shop>,
+    pub fields: Vec<(String, String)>,
 }
 
 /// `guild_settings` key: `off` posts alerts as plain text with the app's own link preview
@@ -322,6 +343,8 @@ impl Alert {
             url: url.to_owned(),
             game: String::new(),
             image: None,
+            shop: None,
+            fields: Vec::new(),
         }
     }
 
@@ -347,11 +370,43 @@ impl Alert {
                     now()
                 )
             }),
+            shop: None,
+            fields: Vec::new(),
+        }
+    }
+
+    /// `{name}` is the store, `{title}` the game.
+    pub(crate) fn free_game(shop: freegames::Shop, g: &freegames::Giveaway) -> Self {
+        let mut fields = vec![("Price".to_owned(), g.price())];
+        if let Some(until) = g.until() {
+            fields.push(("Free until".to_owned(), until));
+        }
+        Self {
+            event: Event::FreeGame,
+            name: shop.name().to_owned(),
+            title: g.game(),
+            url: g.open_giveaway_url.clone(),
+            game: String::new(),
+            image: (!g.image.is_empty()).then(|| g.image.clone()),
+            shop: Some(shop),
+            fields,
         }
     }
 
     /// The embed: linked title, channel as author, the image large, the platform's colour.
     pub(crate) fn embed(&self) -> Embed {
+        if let Some(shop) = self.shop {
+            return Embed {
+                title: format!("Free Game: {}", self.title),
+                url: self.url.clone(),
+                author: Some(self.name.clone()),
+                description: None,
+                image: self.image.clone(),
+                color: Some(shop.color()),
+                footer: Some("via GamerPower".to_owned()),
+                fields: self.fields.clone(),
+            };
+        }
         let twitch = self.event == Event::TwitchLive;
         let title = if self.title.is_empty() {
             format!("{} on Twitch", self.name)
@@ -367,6 +422,7 @@ impl Alert {
             image: self.image.clone(),
             color: Some(if twitch { 0x9146FF } else { 0xFF0000 }),
             footer: Some(if twitch { "Twitch" } else { "YouTube" }.to_owned()),
+            fields: Vec::new(),
         }
     }
 
@@ -383,6 +439,14 @@ impl Alert {
                 text.push_str(&format!(": {title}"));
             }
             return format!("{text}\n{}", self.url);
+        }
+        if self.event == Event::FreeGame {
+            let details: Vec<String> = self.fields.iter().map(|(_, v)| v.clone()).collect();
+            return format!(
+                "Free on **{name}**: **{title}** ({})\n{}",
+                details.join(", until "),
+                self.url
+            );
         }
         format!("**{name}** {event}: **{title}**\n{}", self.url)
     }
@@ -416,11 +480,13 @@ impl Alert {
                     format!("{filled}\n{}", self.url)
                 }
             }
+            // Free games: the embed says it all, like Patchbot's.
+            None if embed && self.event == Event::FreeGame => String::new(),
             None if embed => format!("**{}** {}", escape_md(&self.name), self.event.phrase()),
             None => self.default_text(),
         };
         match mention.map(mention_text) {
-            Some(m) => format!("{m} {body}"),
+            Some(m) => format!("{m} {body}").trim_end().to_owned(),
             None => body,
         }
     }
@@ -490,6 +556,49 @@ async fn poll_twitch(bot: &Bot, store: &Store, twitch: &twitch::Twitch) -> Resul
         }
         tracing::info!(user = %stream.user_login, stream = %stream.id, "Twitch stream went live");
         deliver(bot, store, subs, &Alert::twitch(&stream)).await;
+    }
+    Ok(())
+}
+
+/// Posts each free game once per store. A store polled for the first time (just subscribed or
+/// imported) only records what's running, so subscribing never posts a backlog.
+async fn poll_free_games(bot: &Bot, store: &Store, http: &reqwest::Client) -> Result<(), String> {
+    let sources = group_by_source(
+        store
+            .all_subscriptions(AlertKind::FreeGames)
+            .map_err(|e| e.to_string())?,
+    );
+    for (key, subs) in &sources {
+        let Some(shop) = freegames::Shop::from_key(key) else {
+            continue;
+        };
+        let games = freegames::current(http, shop).await?;
+        tracing::debug!(shop = key, games = games.len(), "polled free games");
+        let first = !store
+            .is_seen(AlertKind::FreeGames, key, BASELINE)
+            .map_err(|e| e.to_string())?;
+        // Oldest first, so several new ones post in the order they started.
+        for g in games.iter().rev() {
+            let id = g.id.to_string();
+            if store
+                .is_seen(AlertKind::FreeGames, key, &id)
+                .map_err(|e| e.to_string())?
+            {
+                continue;
+            }
+            store
+                .mark_seen(AlertKind::FreeGames, key, &id)
+                .map_err(|e| e.to_string())?;
+            if !first {
+                tracing::info!(shop = key, game = %g.title, "new free game");
+                deliver(bot, store, subs, &Alert::free_game(shop, g)).await;
+            }
+        }
+        if first {
+            store
+                .mark_seen(AlertKind::FreeGames, key, BASELINE)
+                .map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -604,6 +713,37 @@ mod tests {
             .image
             .as_deref()
             .is_some_and(|i| i.starts_with("https://t/live_user_abc-1280x720.jpg?t=")));
+    }
+
+    #[test]
+    fn free_game_alert() {
+        let g = freegames::Giveaway {
+            id: 3857,
+            title: "Bread and Fred (Epic Games) Giveaway".into(),
+            worth: "$14.99".into(),
+            image: "https://example.org/art.jpg".into(),
+            open_giveaway_url: "https://example.org/open".into(),
+            end_date: "2026-12-03 23:59:00".into(),
+        };
+        let a = Alert::free_game(freegames::Shop::Epic, &g);
+        let e = a.embed();
+        assert_eq!(e.title, "Free Game: Bread and Fred");
+        assert_eq!(e.author.as_deref(), Some("Epic Games Store"));
+        assert_eq!(
+            e.fields,
+            vec![
+                ("Price".to_owned(), "~~$14.99~~ FREE".to_owned()),
+                ("Free until".to_owned(), "3 December 2026".to_owned()),
+            ]
+        );
+        // No text above the embed unless a mention or custom text is set.
+        assert_eq!(a.embed_text_for(None, None), "");
+        assert_eq!(a.embed_text_for(None, Some("here")), "@here");
+        assert_eq!(
+            a.text_for(None, None),
+            "Free on **Epic Games Store**: **Bread and Fred** (~~$14.99~~ FREE, until 3 December 2026)
+https://example.org/open"
+        );
     }
 
     #[test]

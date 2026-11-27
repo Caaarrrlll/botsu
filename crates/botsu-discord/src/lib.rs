@@ -138,6 +138,9 @@ impl ChatAdapter for DiscordChat {
         if let Some(f) = &embed.footer {
             e = e.footer(CreateEmbedFooter::new(f));
         }
+        for (name, value) in &embed.fields {
+            e = e.field(name, value, true);
+        }
         let mut msg = CreateMessage::new().embed(e);
         if !content.is_empty() {
             msg = msg.content(content);

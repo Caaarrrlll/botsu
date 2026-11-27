@@ -417,6 +417,19 @@ Settings: `FLUXER_URL` / `FLUXER_TOKEN` for the self-hosted instance as before, 
 | Discord's existing alerts are untouched (`$$tube list` on Discord) | ✅ 2026-11-27 |
 | With the self-hosted instance down, Discord and official Fluxer keep working | ✅ 2026-11-27 |
 
+## 12. Free games
+
+| Test | Result |
+|---|---|
+| `$freegames add #channel` posts a notice there and replies with what's free right now (not posted) | |
+| `$freegames list` shows Epic Games Store, Steam and GOG → the channel | |
+| A new free game (Epic changes Thursdays) posts an embed: store, "Free Game: <name>", Price with the old price struck out, Free until, the art; no text above it | |
+| A restart doesn't post it again | |
+| `$freegames mention @role` puts the role above the next embed; `$freegames message epic = {title} is free!` replaces the text | |
+| `$freegames remove steam` leaves Epic and GOG | |
+| `$set embeds off`: a plain-text post with the link instead | |
+| Works the same on Fluxer | |
+
 ## Troubleshooting
 
 | Symptom | Likely cause |

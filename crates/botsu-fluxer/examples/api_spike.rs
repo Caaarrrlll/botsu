@@ -482,6 +482,7 @@ async fn adapter_pieces(chat: &FluxerChat, http: &Http, a: &Args, r: &mut Report
         image: Some("https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg".into()),
         color: Some(0x9146FF),
         footer: Some("Twitch".into()),
+        fields: vec![("Price".into(), "~~$9.99~~ FREE".into())],
     };
     match chat
         .send_embed(&a.channel, "**botsu spike** is live on Twitch", &embed)
