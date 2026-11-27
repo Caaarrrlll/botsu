@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
+use botsu_core::structure::{ChannelKind, ChannelSpec, Overwrite, RoleSpec, Structure};
 use botsu_core::voice::{AudioInput, VoiceAdapter};
 use botsu_core::{
     Author, BanInfo, Bot, Capabilities, ChatAdapter, Error, HistoryMessage, IncomingMessage,
@@ -14,7 +15,8 @@ use botsu_core::{
 use serenity::all::{
     ChannelId, ChannelType, Client, Context, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
     CreateEmbedFooter, CreateMessage, EditMember, EventHandler, GatewayIntents, GetMessages, Guild,
-    GuildId, Http, Message, MessageId, Ready, RoleId, Timestamp, UserId, VoiceState,
+    GuildChannel, GuildId, Http, Message, MessageId, PartialGuild, PermissionOverwriteType, Ready,
+    Role, RoleId, Timestamp, UserId, VoiceState,
 };
 use serenity::async_trait;
 use songbird::input::core::io::ReadOnlySource;
@@ -253,6 +255,41 @@ impl ChatAdapter for DiscordChat {
             .map_err(err)?;
         channel.id.say(&self.http, content).await.map_err(err)?;
         Ok(())
+    }
+
+    async fn send_dm_file(
+        &self,
+        user_id: &str,
+        content: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> botsu_core::Result<()> {
+        let channel = UserId::new(snowflake(user_id)?)
+            .create_dm_channel(&self.http)
+            .await
+            .map_err(err)?;
+        let mut msg = CreateMessage::new().add_file(CreateAttachment::bytes(data, filename));
+        if !content.is_empty() {
+            msg = msg.content(content);
+        }
+        channel
+            .id
+            .send_message(&self.http, msg)
+            .await
+            .map_err(err)?;
+        Ok(())
+    }
+
+    async fn read_structure(&self, guild_id: &str) -> botsu_core::Result<Structure> {
+        let gid = GuildId::new(snowflake(guild_id)?);
+        let guild = gid.to_partial_guild(&self.http).await.map_err(err)?;
+        let roles = gid.roles(&self.http).await.map_err(err)?;
+        let channels = gid.channels(&self.http).await.map_err(err)?;
+        Ok(structure_of(
+            &guild,
+            roles.into_values().collect(),
+            channels.into_values().collect(),
+        ))
     }
 
     async fn guild_name(&self, guild_id: &str) -> botsu_core::Result<String> {
@@ -634,6 +671,144 @@ impl VoiceAdapter for DiscordVoice {
             .ok_or_else(|| Error::Usage("Nothing is playing.".into()))?;
         let result = if paused { track.pause() } else { track.play() };
         result.map_err(|_| Error::Usage("Nothing is playing.".into()))
+    }
+}
+
+/// A Discord server's structure: roles highest first (without @everyone and roles that belong to
+/// bots, integrations or boosting), then channels in the order to create them: loose channels,
+/// then each category followed by its text-like and then its voice channels. Stage channels
+/// become voice channels and forum/media channels text channels; threads aren't listed by
+/// Discord here. Member overrides are left out.
+fn structure_of(guild: &PartialGuild, roles: Vec<Role>, channels: Vec<GuildChannel>) -> Structure {
+    let everyone = guild.id.to_string();
+    let mut roles: Vec<Role> = roles
+        .into_iter()
+        .filter(|r| r.id.get() != guild.id.get())
+        .filter(|r| !r.managed && !r.tags.premium_subscriber)
+        .collect();
+    roles.sort_by_key(|r| (std::cmp::Reverse(r.position), r.id));
+    let everyone_permissions = guild
+        .roles
+        .get(&RoleId::new(guild.id.get()))
+        .map(|r| r.permissions.bits())
+        .unwrap_or(0);
+
+    let spec = |c: &GuildChannel| -> Option<ChannelSpec> {
+        let (kind, converted_from) = match c.kind {
+            ChannelType::Category => (ChannelKind::Category, None),
+            ChannelType::Text => (ChannelKind::Text, None),
+            ChannelType::News => (ChannelKind::Announcement, None),
+            ChannelType::Voice => (ChannelKind::Voice, None),
+            ChannelType::Stage => (
+                ChannelKind::Voice,
+                Some("stage channel, made a voice channel".to_owned()),
+            ),
+            ChannelType::Forum => (
+                ChannelKind::Text,
+                Some("forum channel, made a text channel".to_owned()),
+            ),
+            _ => return None,
+        };
+        let overwrites = c
+            .permission_overwrites
+            .iter()
+            .filter_map(|o| match o.kind {
+                PermissionOverwriteType::Role(role) => Some(Overwrite {
+                    role: role.to_string(),
+                    allow: o.allow.bits().to_string(),
+                    deny: o.deny.bits().to_string(),
+                }),
+                _ => None,
+            })
+            .collect();
+        Some(ChannelSpec {
+            id: c.id.to_string(),
+            kind,
+            name: c.name.clone(),
+            topic: c.topic.clone().filter(|t| !t.trim().is_empty()),
+            parent: c.parent_id.map(|p| p.to_string()),
+            nsfw: c.nsfw,
+            slowmode: u32::from(c.rate_limit_per_user.unwrap_or(0)),
+            bitrate: c.bitrate,
+            user_limit: c.user_limit,
+            overwrites,
+            converted_from,
+        })
+    };
+
+    // Within one parent: text-like by position, then voice by position.
+    let ordered = |list: Vec<&GuildChannel>| -> Vec<ChannelSpec> {
+        let mut specs: Vec<(u8, u16, u64, ChannelSpec)> = list
+            .into_iter()
+            .filter_map(|c| {
+                spec(c).map(|s| {
+                    let voice = u8::from(s.kind == ChannelKind::Voice);
+                    (voice, c.position, c.id.get(), s)
+                })
+            })
+            .collect();
+        specs.sort_by_key(|(voice, pos, id, _)| (*voice, *pos, *id));
+        specs.into_iter().map(|(_, _, _, s)| s).collect()
+    };
+
+    let mut categories: Vec<&GuildChannel> = channels
+        .iter()
+        .filter(|c| c.kind == ChannelType::Category)
+        .collect();
+    categories.sort_by_key(|c| (c.position, c.id));
+    let loose: Vec<&GuildChannel> = channels
+        .iter()
+        .filter(|c| c.kind != ChannelType::Category && c.parent_id.is_none())
+        .collect();
+
+    let mut out = ordered(loose);
+    for cat in categories {
+        if let Some(s) = spec(cat) {
+            out.push(s);
+        }
+        let children: Vec<&GuildChannel> = channels
+            .iter()
+            .filter(|c| c.kind != ChannelType::Category && c.parent_id == Some(cat.id))
+            .collect();
+        out.extend(ordered(children));
+    }
+
+    // PNG, so the importing platform gets a plain image (an animated icon becomes its first
+    // frame).
+    let icon_url = guild.icon.map(|h| {
+        format!(
+            "https://cdn.discordapp.com/icons/{}/{h}.png?size=1024",
+            guild.id
+        )
+    });
+    let banner_url = guild.banner.as_ref().map(|h| {
+        format!(
+            "https://cdn.discordapp.com/banners/{}/{h}.png?size=1024",
+            guild.id
+        )
+    });
+
+    Structure {
+        botsu_structure: botsu_core::structure::FORMAT_VERSION,
+        exported_at: botsu_core::structure::now_rfc3339(),
+        from_platform: "Discord".to_owned(),
+        name: guild.name.clone(),
+        icon_url,
+        banner_url,
+        everyone_permissions: everyone_permissions.to_string(),
+        everyone_id: everyone,
+        roles: roles
+            .into_iter()
+            .map(|r| RoleSpec {
+                id: r.id.to_string(),
+                name: r.name,
+                color: r.colour.0,
+                permissions: r.permissions.bits().to_string(),
+                hoist: r.hoist,
+                mentionable: r.mentionable,
+            })
+            .collect(),
+        channels: out,
     }
 }
 

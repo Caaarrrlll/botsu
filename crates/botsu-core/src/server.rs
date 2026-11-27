@@ -537,12 +537,13 @@ pub fn admin_group(store: Arc<Store>, http: reqwest::Client, twitch_ready: bool)
     Group::new(
         "admin",
         "Admin",
-        "Admin tools: addrole, removerole, announce, export, import (admins; import: server owner).",
+        "Admin tools: addrole, removerole, announce, export, import, structure (admins; import: server owner).",
     )
     .with(RoleCommand::add())
     .with(RoleCommand::remove())
     .with(AnnounceCommand)
     .with(crate::transfer::ExportCommand::new(store.clone()))
+    .with(crate::structure::StructureCommand::new(http.clone()))
     .with(crate::transfer::ImportCommand::new(store, http, twitch_ready))
 }
 

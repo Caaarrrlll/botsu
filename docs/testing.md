@@ -386,6 +386,23 @@ server (channels ignore case, `#`, spaces, `-` and `_`).
 | `--replace` removes an alert that isn't in the file | |
 | The other direction: Fluxer export → Discord import | |
 
+## 10. Server structure copy (Discord → Fluxer)
+
+```
+$admin structure export            ← admins, on the Discord server: the file comes by DM
+$admin structure import            ← server owner, on the Fluxer server, file attached: preview by DM
+$admin structure confirm           ← builds it (about 10 roles or channels a minute); report by DM
+$admin structure cancel
+```
+
+| Test | Result |
+|---|---|
+| `export` DMs a `botsu-structure-….json`; the channel only says "Sent you a DM"; with DMs closed, a clear error | |
+| `import` on a fresh Fluxer server DMs a preview with role and channel counts and any converted channels | |
+| `confirm`: roles appear in the same order with the same colours; categories and channels in the same order; a staff-only channel is hidden from @everyone on Fluxer too | |
+| Server name and icon copied (banner only if the Fluxer server has the banner feature) | |
+| Then `$admin export` on Discord and `$admin import` on Fluxer: alerts and roles map by name without `map` lines | |
+
 ## Troubleshooting
 
 | Symptom | Likely cause |

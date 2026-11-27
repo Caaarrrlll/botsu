@@ -189,6 +189,7 @@ Runbook: [cutover.md](cutover.md).
 - [ ] Update the server notes (template snapshot, env file location, update procedure).
 - [x] Export/import a server's setup between any two servers, Discord or Fluxer (`admin export`, `admin import` + file → preview → `confirm`; `--replace`, `map old = new`). No user data. `transfer.rs`; plan and details: [settings-migration.md](settings-migration.md). Live test: testing.md section 9.
 - [ ] Optional, later: `import --create-channels`, and `import from <platform> <server>` within one botsu.
+- [x] Server structure copy, Discord → Fluxer (`admin structure export|import|confirm|cancel`, results by DM): roles, categories, channels, per-role channel overrides, name/icon/banner. No members. `structure.rs`; live test: testing.md section 10.
 
 **Done when:** Red is gone and nobody noticed.
 

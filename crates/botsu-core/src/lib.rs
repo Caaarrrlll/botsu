@@ -18,6 +18,7 @@ pub mod music;
 pub mod permissions;
 pub mod server;
 pub mod storage;
+pub mod structure;
 pub mod transfer;
 pub mod voice;
 pub mod ytdlp;

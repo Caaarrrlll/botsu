@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use botsu_core::structure::{ChannelKind, ChannelSpec, Overwrite as StructureOverwrite, RoleSpec};
 use botsu_core::voice::{AudioInput, VoiceAdapter};
 use botsu_core::{
     Author, BanInfo, Bot, Capabilities, ChatAdapter, Error, HistoryMessage, IncomingMessage,
@@ -69,28 +70,83 @@ impl FluxerChat {
     ) -> botsu_core::Result<serde_json::Value> {
         let url = format!("{}{path}", self.http.base_url);
         let client = &self.http.client;
-        let mut req = match method {
-            Method::Post => client.post(&url),
-            Method::Put => client.put(&url),
-            Method::Patch => client.patch(&url),
-            Method::Delete => client.delete(&url),
-        };
-        if let Some(r) = reason.filter(|r| !r.trim().is_empty()) {
-            req = req.header("X-Audit-Log-Reason", percent_encode(r));
-        }
-        req = match body {
-            Some(b) => req.json(&b),
-            None => req.body(""),
-        };
-        let resp = req.send().await.map_err(err)?;
-        let status = resp.status();
-        if !status.is_success() {
+        // Fluxer answers 429 with how long to wait ("retry_after", seconds); bulk work such as
+        // building a server's structure hits that by design (10 channels a minute), so wait it
+        // out a few times instead of failing.
+        for attempt in 0..6 {
+            let mut req = match method {
+                Method::Post => client.post(&url),
+                Method::Put => client.put(&url),
+                Method::Patch => client.patch(&url),
+                Method::Delete => client.delete(&url),
+            };
+            if let Some(r) = reason.filter(|r| !r.trim().is_empty()) {
+                req = req.header("X-Audit-Log-Reason", percent_encode(r));
+            }
+            req = match &body {
+                Some(b) => req.json(b),
+                None => req.body(""),
+            };
+            let resp = req.send().await.map_err(err)?;
+            let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(err(format!("HTTP {status}: {text}")));
+            if status.as_u16() == 429 && attempt < 5 {
+                let wait = serde_json::from_str::<serde_json::Value>(&text)
+                    .ok()
+                    .and_then(|v| v["retry_after"].as_f64())
+                    .unwrap_or(5.0)
+                    .clamp(0.5, 120.0);
+                tracing::debug!(path, wait, "Fluxer rate limit; waiting");
+                tokio::time::sleep(std::time::Duration::from_secs_f64(wait)).await;
+                continue;
+            }
+            if !status.is_success() {
+                return Err(err(format!("HTTP {status}: {text}")));
+            }
+            // 204 and other empty bodies come back as Null.
+            return Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null));
         }
-        // 204 and other empty bodies come back as Null.
-        let text = resp.text().await.unwrap_or_default();
-        Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
+        Err(err("still rate limited after several waits"))
+    }
+
+    /// Opens (or reuses) the DM channel with a user.
+    async fn dm_channel(&self, user_id: &str) -> botsu_core::Result<String> {
+        let body = serde_json::json!({ "recipient_id": user_id });
+        let channel = self
+            .call(Method::Post, "/users/@me/channels", Some(body), None)
+            .await?;
+        channel["id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| err("opening a DM returned no channel ID"))
+    }
+}
+
+/// Image bytes as a data URI, the form Fluxer takes for icons and banners.
+fn data_uri(bytes: &[u8]) -> String {
+    use base64::Engine;
+    let mime = if bytes.starts_with(b"\x89PNG") {
+        "image/png"
+    } else if bytes.starts_with(b"\xFF\xD8") {
+        "image/jpeg"
+    } else if bytes.starts_with(b"GIF8") {
+        "image/gif"
+    } else if bytes.len() > 12 && &bytes[8..12] == b"WEBP" {
+        "image/webp"
+    } else {
+        "image/png"
+    };
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    format!("data:{mime};base64,{b64}")
+}
+
+/// Fluxer's channel type numbers.
+fn channel_type(kind: ChannelKind) -> u8 {
+    match kind {
+        ChannelKind::Text => 0,
+        ChannelKind::Voice => 2,
+        ChannelKind::Category => 4,
+        ChannelKind::Announcement => 5,
     }
 }
 
@@ -312,16 +368,140 @@ impl ChatAdapter for FluxerChat {
         Ok(sent["id"].as_str().unwrap_or_default().to_owned())
     }
 
-    async fn send_dm(&self, user_id: &str, content: &str) -> botsu_core::Result<()> {
-        // fluxer-rust has no DM helper: open (or reuse) the DM channel, then post in it.
-        let body = serde_json::json!({ "recipient_id": user_id });
-        let channel = self
-            .call(Method::Post, "/users/@me/channels", Some(body), None)
+    async fn send_dm_file(
+        &self,
+        user_id: &str,
+        content: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> botsu_core::Result<()> {
+        let channel = self.dm_channel(user_id).await?;
+        self.send_file(&channel, content, filename, data)
+            .await
+            .map(|_| ())
+    }
+
+    async fn set_guild_look(
+        &self,
+        guild_id: &str,
+        name: &str,
+        icon: Option<Vec<u8>>,
+        banner: Option<Vec<u8>>,
+    ) -> botsu_core::Result<()> {
+        let path = format!("/guilds/{guild_id}");
+        let mut body = serde_json::json!({ "name": name });
+        if let Some(icon) = &icon {
+            body["icon"] = data_uri(icon).into();
+        }
+        self.call(Method::Patch, &path, Some(body), None).await?;
+        // Separately: a server without Fluxer's banner feature refuses it, and that mustn't
+        // undo the name and icon.
+        if let Some(banner) = &banner {
+            let body = serde_json::json!({ "banner": data_uri(banner) });
+            self.call(Method::Patch, &path, Some(body), None)
+                .await
+                .map_err(|e| err(format!("banner: {e}")))?;
+        }
+        Ok(())
+    }
+
+    async fn set_everyone_permissions(
+        &self,
+        guild_id: &str,
+        permissions: &str,
+    ) -> botsu_core::Result<()> {
+        let path = format!("/guilds/{guild_id}/roles/{guild_id}");
+        let body = serde_json::json!({ "permissions": permissions });
+        self.call(Method::Patch, &path, Some(body), None)
+            .await
+            .map(|_| ())
+    }
+
+    async fn create_role(&self, guild_id: &str, role: &RoleSpec) -> botsu_core::Result<String> {
+        let body = serde_json::json!({
+            "name": role.name,
+            "color": role.color,
+            "permissions": role.permissions,
+        });
+        let created = self
+            .call(
+                Method::Post,
+                &format!("/guilds/{guild_id}/roles"),
+                Some(body),
+                None,
+            )
             .await?;
-        let id = channel["id"]
+        let id = created["id"]
             .as_str()
-            .ok_or_else(|| err("opening a DM returned no channel ID"))?;
-        self.send_message(id, content).await.map(|_| ())
+            .map(str::to_owned)
+            .ok_or_else(|| err("creating a role returned no ID"))?;
+        // Fluxer's create doesn't take these; set them right after.
+        if role.hoist || role.mentionable {
+            let body = serde_json::json!({ "hoist": role.hoist, "mentionable": role.mentionable });
+            self.call(
+                Method::Patch,
+                &format!("/guilds/{guild_id}/roles/{id}"),
+                Some(body),
+                None,
+            )
+            .await?;
+        }
+        Ok(id)
+    }
+
+    async fn create_channel(
+        &self,
+        guild_id: &str,
+        channel: &ChannelSpec,
+        parent_id: Option<&str>,
+        overwrites: &[StructureOverwrite],
+    ) -> botsu_core::Result<String> {
+        // Always sent, even empty: left out, Fluxer would copy the category's overrides.
+        let overwrites: Vec<serde_json::Value> = overwrites
+            .iter()
+            .map(|o| serde_json::json!({ "id": o.role, "type": 0, "allow": o.allow, "deny": o.deny }))
+            .collect();
+        let mut body = serde_json::json!({
+            "type": channel_type(channel.kind),
+            "name": channel.name,
+            "nsfw": channel.nsfw,
+            "permission_overwrites": overwrites,
+        });
+        if let Some(p) = parent_id {
+            body["parent_id"] = p.into();
+        }
+        if let Some(t) = &channel.topic {
+            body["topic"] = t.chars().take(1024).collect::<String>().into();
+        }
+        if channel.kind != ChannelKind::Category && channel.kind != ChannelKind::Voice {
+            body["rate_limit_per_user"] = channel.slowmode.min(21_600).into();
+        }
+        if channel.kind == ChannelKind::Voice {
+            if let Some(b) = channel.bitrate {
+                // Above 96 kbps needs a Fluxer feature most servers don't have.
+                body["bitrate"] = b.clamp(8_000, 96_000).into();
+            }
+            if let Some(u) = channel.user_limit {
+                body["user_limit"] = u.min(99).into();
+            }
+        }
+        let created = self
+            .call(
+                Method::Post,
+                &format!("/guilds/{guild_id}/channels"),
+                Some(body),
+                None,
+            )
+            .await?;
+        created["id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| err("creating a channel returned no ID"))
+    }
+
+    async fn send_dm(&self, user_id: &str, content: &str) -> botsu_core::Result<()> {
+        let channel = self.dm_channel(user_id).await?;
+        self.send_message(&channel, content).await.map(|_| ())
     }
 
     async fn guild_name(&self, guild_id: &str) -> botsu_core::Result<String> {

@@ -65,6 +65,8 @@ once connected, and pollers look up `bot.chat(platform)` to post.
 | `kick`, `ban`, `unban`, `bans`, `timeout` | no | moderation (phase 5); reasons go to the audit log |
 | `send_embed(channel, text, embed)` | no | alerts (embed with a large image; plain text if refused) |
 | `send_file(channel, text, name, bytes)`, `text_channels(guild)` | no | settings export/import (`transfer.rs`); `IncomingMessage.attachments` carries the uploaded file |
+| `send_dm_file`, `read_structure(guild)` | no | `admin structure export` (Discord reads roles, channels, role overrides, name/icon/banner) |
+| `set_guild_look`, `set_everyone_permissions`, `create_role`, `create_channel` | no | `admin structure confirm` (Fluxer builds it; 429 replies are waited out in `FluxerChat::call`) |
 | `send_dm(user, text)`, `guild_name` | no | moderation DMs (`set moddm on`). Fluxer opens the DM with `POST /users/@me/channels` |
 
 Optional methods have default bodies that return `Error::Unsupported`, so a platform that can't
@@ -410,3 +412,17 @@ through its constructor.
   fluxer-rust was tested with, and Windows builds need `+crt-static` (`.cargo/config.toml`).
 - **serenity 0.12**: gateway + REST only, no cache. Needs the privileged Message Content intent
   for prefix commands.
+
+## Server structure copy (`structure.rs`)
+
+`admin structure export` (admins) DMs a JSON file with the server's roles (highest first; no
+@everyone, no bot/integration/booster roles), @everyone's permissions, categories and channels
+(text, announcement, voice; stage becomes voice, forum becomes text, noted as `converted_from`) in
+creation order, each channel's per-role overrides, and the server's name, icon and banner (PNG
+URLs). Member overrides and anything about members are left out. `admin structure import` + the
+file (server owner) DMs a preview; `confirm` builds it: name/icon/banner, @everyone's permissions,
+roles top-down (each new role lands at the bottom, so the order comes out right), then channels in
+file order with overrides mapped to the new role IDs (@everyone → the new server's ID).
+Permission bits are masked to the ones Fluxer defines (`FLUXER_PERMISSIONS`). Fluxer creates about
+10 roles or channels a minute; `FluxerChat::call` waits out 429 replies (`retry_after`).
+

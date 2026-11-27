@@ -80,6 +80,8 @@ cookies, Stoat. Branch protection waits for the user's git flow. Keep docs/roadm
 up to date as work lands.
 
 ## Commands beyond the phases
+- `admin structure` (`structure.rs`): copies roles, channels, role overrides and name/icon/banner
+  Discord → Fluxer, results by DM; Discord reads (`read_structure`), Fluxer builds.
 - `setprefix` (per-server prefix, read per message in `Bot::prefix_for`), `cc` custom commands
   (`custom.rs`, migration 7; `bot.enable_custom_commands` must run after all other registrations),
   `invite` (adapters call `bot.register_invite`), `feedback` (GitHub issues link).

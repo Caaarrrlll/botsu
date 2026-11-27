@@ -228,6 +228,84 @@ pub trait ChatAdapter: Send + Sync {
         })
     }
 
+    /// Sends a direct message with one file attached.
+    async fn send_dm_file(
+        &self,
+        user_id: &str,
+        content: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> Result<()> {
+        let _ = (user_id, content, filename, data);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "files by DM",
+        })
+    }
+
+    /// A server's roles, channels and their role overrides, name, icon and banner
+    /// (`admin structure export`).
+    async fn read_structure(&self, guild_id: &str) -> Result<crate::structure::Structure> {
+        let _ = guild_id;
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "exporting a server's structure",
+        })
+    }
+
+    /// Sets a server's name, and its icon and banner if given (image bytes).
+    async fn set_guild_look(
+        &self,
+        guild_id: &str,
+        name: &str,
+        icon: Option<Vec<u8>>,
+        banner: Option<Vec<u8>>,
+    ) -> Result<()> {
+        let _ = (guild_id, name, icon, banner);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "building a server's structure",
+        })
+    }
+
+    /// Replaces the @everyone role's permissions (decimal string).
+    async fn set_everyone_permissions(&self, guild_id: &str, permissions: &str) -> Result<()> {
+        let _ = (guild_id, permissions);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "building a server's structure",
+        })
+    }
+
+    /// Creates a role (below the existing ones) and returns its ID.
+    async fn create_role(
+        &self,
+        guild_id: &str,
+        role: &crate::structure::RoleSpec,
+    ) -> Result<String> {
+        let _ = (guild_id, role);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "building a server's structure",
+        })
+    }
+
+    /// Creates a channel (after the existing ones in its category) with the given per-role
+    /// overrides (already mapped to this server's role IDs) and returns its ID.
+    async fn create_channel(
+        &self,
+        guild_id: &str,
+        channel: &crate::structure::ChannelSpec,
+        parent_id: Option<&str>,
+        overwrites: &[crate::structure::Overwrite],
+    ) -> Result<String> {
+        let _ = (guild_id, channel, parent_id, overwrites);
+        Err(Error::Unsupported {
+            platform: self.platform(),
+            op: "building a server's structure",
+        })
+    }
+
     /// Sends a direct message to a user (moderation notices). Fails if they don't accept DMs.
     async fn send_dm(&self, user_id: &str, content: &str) -> Result<()> {
         let _ = (user_id, content);

@@ -245,6 +245,7 @@ name = "botsu-fluxer"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "botsu-core",
  "fluxer-rust",
  "serde_json",
