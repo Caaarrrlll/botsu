@@ -104,8 +104,8 @@ Under `!admin`, next to the other server tools:
 
 | Command | Who | Does |
 |---|---|---|
-| `admin export` | admins | posts the file as an attachment (`botsu-<platform>-<server>-<date>.json`) |
-| `admin import` + attached file | server owner (or bot owner) | reads the file, maps it, posts a **preview**; nothing changes yet |
+| `admin export` | admins | DMs you the file (`botsu-<platform>-<server>-<date>.json`) |
+| `admin import` + attached file | server owner (or bot owner) | reads the file, maps it, DMs you a **preview**; nothing changes yet |
 | `admin import confirm` | the same person, within 10 minutes | applies the preview |
 | `admin import cancel` | the same person | drops it |
 

@@ -359,8 +359,8 @@ watching for.
 ### Commands
 
 ```
-!admin export                      ← admins: posts botsu-<platform>-<server>-<date>.json
-!admin import                      ← server owner, with that file attached: shows a preview
+!admin export                      ← admins: DMs you botsu-<platform>-<server>-<date>.json
+!admin import                      ← server owner, with that file attached: DMs you a preview
   --replace                          (same message) remove this server's alerts, roles, settings first
   map old-name = #channel            (same message, one per line) when names don't match
   map Old Role = @Role
@@ -376,8 +376,8 @@ server (channels ignore case, `#`, spaces, `-` and `_`).
 
 | Test | Result |
 |---|---|
-| `!admin export` on the Discord test server posts a `.json` file; it opens as readable JSON | |
-| `!admin import` + that file on the Fluxer test server: the preview lists each alert, role and setting with "add", "already there" or "not found" | |
+| `!admin export` on the Discord test server DMs a `.json` file (the channel only says "Sent you a DM"); it opens as readable JSON | |
+| `!admin import` + that file on the Fluxer test server: the DM'd preview lists each alert, role and setting with "add", "already there" or "not found" | |
 | A non-owner admin gets "You need to be the server owner" for `import` | |
 | `map` lines fix a channel and a role that didn't match | |
 | `!admin import confirm`: each target channel gets one notice; `!tube list` / `!twitch list` / `!set roles` show the imported setup, with custom text and mentions | |

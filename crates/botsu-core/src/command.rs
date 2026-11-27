@@ -59,6 +59,33 @@ impl CommandContext {
             .await
     }
 
+    /// DMs `text` (and a file) to whoever ran the command and says so briefly in the channel,
+    /// for replies that shouldn't be posted where everyone sees them (exports, previews). If the
+    /// DM can't be sent, the error says why.
+    pub async fn reply_dm(&self, text: &str, file: Option<(&str, Vec<u8>)>) -> Result<()> {
+        let user = &self.message.author.id;
+        let sent = match file {
+            Some((name, data)) => self.chat.send_dm_file(user, text, name, data).await,
+            None => self.chat.send_dm(user, text).await,
+        };
+        match sent {
+            Ok(()) => {
+                self.reply("Sent you a DM.").await?;
+                Ok(())
+            }
+            Err(Error::Unsupported { .. }) => Err(Error::Usage(
+                "I can't send that by DM on this platform.".into(),
+            )),
+            Err(e) => {
+                tracing::info!(error = %e, "DM failed");
+                Err(Error::Usage(
+                    "I couldn't DM you. Allow direct messages from server members and try again."
+                        .into(),
+                ))
+            }
+        }
+    }
+
     /// Stops the command unless the author is a bot owner. The reply includes the author's
     /// ID, so setting up `BOTSU_OWNERS` doesn't need developer mode to find it.
     pub fn require_owner(&self) -> Result<()> {

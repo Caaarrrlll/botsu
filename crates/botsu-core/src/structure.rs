@@ -216,8 +216,8 @@ pub fn preview(
          they stay as they are and the new ones are added.\n\
          Fluxer creates about 10 roles or channels a minute, so this takes about {} minute(s). \
          I'll message you when it's done.\n\
-         `{prefix}admin structure confirm` within 10 minutes builds it; \
-         `{prefix}admin structure cancel` drops it.",
+         `{prefix}structure confirm` within 10 minutes builds it; \
+         `{prefix}structure cancel` drops it.",
         (s.roles.len() + s.channels.len()).div_ceil(10).max(1)
     ));
     out
@@ -334,43 +334,12 @@ impl StructureCommand {
     fn usage(p: &str) -> String {
         format!(
             "Copy a server's channels, roles and channel permissions to another server:\n\
-             `{p}admin structure export`: I DM you this server's structure as a file (admins)\n\
-             `{p}admin structure import` with that file attached, on the new server: I DM you a \
+             `{p}structure export`: I DM you this server's structure as a file (admins)\n\
+             `{p}structure import` with that file attached, on the new server: I DM you a \
              preview (server owner)\n\
-             `{p}admin structure confirm` builds it; `{p}admin structure cancel` drops it.\n\
+             `{p}structure confirm` builds it; `{p}structure cancel` drops it.\n\
              Members, their roles and messages aren't copied."
         )
-    }
-
-    /// DMs `text` (and a file), and says so briefly in the channel. If DMs are closed, says that
-    /// instead.
-    async fn dm(
-        &self,
-        ctx: &CommandContext,
-        text: &str,
-        file: Option<(&str, Vec<u8>)>,
-    ) -> Result<()> {
-        let user = &ctx.message.author.id;
-        let sent = match file {
-            Some((name, data)) => ctx.chat.send_dm_file(user, text, name, data).await,
-            None => ctx.chat.send_dm(user, text).await,
-        };
-        match sent {
-            Ok(()) => {
-                ctx.reply("Sent you a DM.").await?;
-                Ok(())
-            }
-            Err(Error::Unsupported { .. }) => Err(Error::Usage(
-                "I can't send files by DM on this platform.".into(),
-            )),
-            Err(e) => {
-                tracing::info!(error = %e, "structure DM failed");
-                Err(Error::Usage(
-                    "I couldn't DM you. Allow direct messages from server members and try again."
-                        .into(),
-                ))
-            }
-        }
     }
 
     async fn export(&self, ctx: &CommandContext, guild: &str) -> Result<()> {
@@ -385,13 +354,13 @@ impl StructureCommand {
             .map_err(|e| Error::internal("writing the structure", e))?;
         let text = format!(
             "Structure of **{}**: {} roles, {} channels. Import it on the new server with \
-             `{}admin structure import` and this file attached.",
+             `{}structure import` and this file attached.",
             s.name,
             s.roles.len(),
             s.channels.len(),
             ctx.prefix
         );
-        self.dm(ctx, &text, Some((&file_name(&s), json))).await
+        ctx.reply_dm(&text, Some((&file_name(&s), json))).await
     }
 
     async fn import(&self, ctx: &CommandContext, guild: &str) -> Result<()> {
@@ -420,7 +389,7 @@ impl StructureCommand {
             ),
             (Instant::now(), s),
         );
-        self.dm(ctx, &text, None).await
+        ctx.reply_dm(&text, None).await
     }
 
     async fn confirm(&self, ctx: &CommandContext, guild: &str) -> Result<()> {
@@ -435,7 +404,7 @@ impl StructureCommand {
             .filter(|(at, _)| at.elapsed() < PENDING_FOR)
         else {
             return Err(Error::Usage(format!(
-                "Nothing to confirm: run `{}admin structure import` with the file first.",
+                "Nothing to confirm: run `{}structure import` with the file first.",
                 ctx.prefix
             )));
         };
@@ -450,8 +419,8 @@ impl StructureCommand {
             text.push_str(&format!("\nNot done:\n• {}", report.failed.join("\n• ")));
         }
         text.push_str(&format!(
-            "\nbotsu's own alerts, roles and settings: `{}admin export` on the old server, then \
-             `{}admin import` here (the names now match).",
+            "\nbotsu's own alerts, roles and settings: `{}export` on the old server, then \
+             `{}import` here (the names now match).",
             ctx.prefix, ctx.prefix
         ));
         if text.chars().count() > 1900 {
@@ -617,7 +586,7 @@ mod tests {
 
     #[test]
     fn preview_counts_and_notes() {
-        let p = preview(&sample(), "$", 1, 2);
+        let p = preview(&sample(), "$admin ", 1, 2);
         assert!(
             p.contains("2 roles") && p.contains("1 categories, 1 text"),
             "{p}"

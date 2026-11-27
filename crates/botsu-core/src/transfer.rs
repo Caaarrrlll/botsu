@@ -687,8 +687,8 @@ impl Plan {
             out.push('\n');
         }
         out.push_str(&format!(
-            "`{prefix}admin import confirm` within 10 minutes applies this; \
-             `{prefix}admin import cancel` drops it."
+            "`{prefix}import confirm` within 10 minutes applies this; \
+             `{prefix}import cancel` drops it."
         ));
         out
     }
@@ -852,14 +852,13 @@ impl Command for ExportCommand {
             .map_err(|e| Error::internal("writing the export", e))?;
         let text = format!(
             "This server's setup: {} alert(s), {} admin/mod role(s), {} setting(s). No user \
-             data. Import it with `{}admin import` and this file attached.",
+             data. Import it with `{}import` and this file attached.",
             export.subscriptions.len(),
             export.permissions.admin_roles.len() + export.permissions.mod_roles.len(),
             export.settings.len(),
             ctx.prefix
         );
-        ctx.chat
-            .send_file(&ctx.message.channel_id, &text, &file_name(&export), json)
+        ctx.reply_dm(&text, Some((&file_name(&export), json)))
             .await?;
         Ok(())
     }
@@ -892,11 +891,11 @@ impl ImportCommand {
 
     fn usage(p: &str) -> String {
         format!(
-            "Usage: `{p}admin import` with a botsu export file attached (from `{p}admin export`). \
+            "Usage: `{p}import` with a botsu export file attached (from `{p}export`). \
              Options on the same message: `--replace` (remove this server's alerts, roles and \
              settings first), and lines like `map old-channel = #channel` or \
-             `map Old Role = @Role` for names that don't match. Then `{p}admin import confirm` \
-             or `{p}admin import cancel`."
+             `map Old Role = @Role` for names that don't match. Then `{p}import confirm` \
+             or `{p}import cancel`."
         )
     }
 
@@ -963,19 +962,13 @@ impl ImportCommand {
             (Instant::now(), plan),
         );
         if text.chars().count() <= MAX_MESSAGE {
-            ctx.reply(&text).await?;
+            ctx.reply_dm(&text, None).await?;
         } else {
-            ctx.chat
-                .send_file(
-                    &ctx.message.channel_id,
-                    &format!(
-                        "The preview is long, so it's in the file. `{p}admin import confirm` \
-                         within 10 minutes applies it; `{p}admin import cancel` drops it.",
-                        p = ctx.prefix
-                    ),
-                    "import-preview.txt",
-                    text.into_bytes(),
-                )
+            let note = format!(
+                "The preview is long, so it's in the file. `{p}import confirm` within 10                  minutes applies it; `{p}import cancel` drops it.",
+                p = ctx.prefix
+            );
+            ctx.reply_dm(&note, Some(("import-preview.txt", text.into_bytes())))
                 .await?;
         }
         Ok(())
@@ -1014,7 +1007,7 @@ impl Command for ImportCommand {
                 let pending = self.pending().remove(&key);
                 let Some((at, plan)) = pending.filter(|(at, _)| at.elapsed() < PENDING_FOR) else {
                     return Err(Error::Usage(format!(
-                        "Nothing to confirm: run `{}admin import` with the file first (a preview \
+                        "Nothing to confirm: run `{}import` with the file first (a preview \
                          is kept for 10 minutes).",
                         ctx.prefix
                     )));
@@ -1029,7 +1022,7 @@ impl Command for ImportCommand {
                     &ctx.message.author.id,
                 )
                 .await?;
-                ctx.reply(&summary).await?;
+                ctx.reply_dm(&summary, None).await?;
                 Ok(())
             }
             Some("cancel") => {
@@ -1211,7 +1204,7 @@ mod tests {
         assert!(p
             .settings
             .contains(&(VOLUME_KEY.to_owned(), "80".to_owned())));
-        assert!(p.preview("!").contains("admin import confirm"));
+        assert!(p.preview("!admin ").contains("`!admin import confirm`"));
         // Custom commands: "rules" exists here already, "ip" is new.
         assert_eq!(
             p.custom_commands,
