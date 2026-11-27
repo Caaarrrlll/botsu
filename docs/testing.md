@@ -411,7 +411,7 @@ Settings: `FLUXER_URL` / `FLUXER_TOKEN` for the self-hosted instance as before, 
 | Test | Result |
 |---|---|
 | The log shows a connection and an invite link for each instance (`platform=Fluxer`, `platform="Fluxer (official)"`) | official ✅ 2026-11-27 (self-hosted instance offline) |
-| `$$invite` lists Discord, Fluxer and Fluxer (official) | |
+| `$$invite` lists Discord, Fluxer and Fluxer (official) | Discord + Fluxer (official) with the experimental notice ✅ 2026-11-27; self-hosted link appears once it's reachable (pending) |
 | The bot answers on a server of each instance; alerts and settings on one don't show up on the other | official: joins and answers `$$help`, `$$tube list` starts empty (nothing from the self-hosted instance) ✅ 2026-11-27 |
 | Existing self-hosted alerts and settings are still there (`$$tube list`) | pending (instance offline) |
 | Discord's existing alerts are untouched (`$$tube list` on Discord) | ✅ 2026-11-27 |
