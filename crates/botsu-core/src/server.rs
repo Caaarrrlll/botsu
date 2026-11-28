@@ -2,7 +2,7 @@
 //!
 //! | Command | Level |
 //! |---|---|
-//! | `set adminrole/modrole add/remove <role>`, `set roles`, `set modlog`, `set muterole`, `set moddm` | server owner |
+//! | `set adminrole/modrole add/remove <role>`, `set roles`, `set modlog`, `set muterole`, `set moddm`, `set autorole` | server owner |
 //! | `cleanup messages/user/bots` | mod |
 //! | `addrole <role> <@user…>`, `removerole <role> <@user>`, `announce` | admin |
 
@@ -18,6 +18,23 @@ use crate::error::{Error, Result};
 use crate::moderation::{MODLOG_KEY, MOD_DM_KEY, MUTE_ROLE_KEY};
 use crate::permissions::{Level, ADMIN_ROLE, MOD_ROLE};
 use crate::storage::{now, Store};
+
+/// `guild_settings` key: the role every new member gets when they join (`set autorole`).
+pub const AUTOROLE_KEY: &str = "autorole";
+
+/// Permissions an autorole may not have: every newcomer, including raiders, would get them.
+/// Kick, Ban, Administrator, Manage Channels, Manage Server, Manage Messages, Mention Everyone,
+/// Manage Roles, Manage Webhooks, Moderate Members (same bits on Discord and Fluxer).
+const STAFF_PERMISSIONS: u64 = (1 << 1)
+    | (1 << 2)
+    | ADMINISTRATOR
+    | (1 << 4)
+    | (1 << 5)
+    | (1 << 13)
+    | (1 << 17)
+    | MANAGE_ROLES
+    | (1 << 29)
+    | (1 << 40);
 
 /// `<@123>`, `<@!123>` or `123` → `123`.
 pub fn parse_user(arg: &str) -> Option<String> {
@@ -157,7 +174,8 @@ impl SetCommand {
              `{p}set modlog <#channel>` / `{p}set modlog off`: where moderation cases are posted
              `{p}set muterole <role>` / `{p}set muterole off`: the role `mute` gives (set its channel permissions yourself)
              `{p}set moddm on|off`: DM members when they're warned, kicked, banned, timed out or muted (off by default)\n\
-             `{p}set embeds on|off`: alerts as botsu's embed with a large image (on), or plain text with the app's own link preview (off)"
+             `{p}set embeds on|off`: alerts as botsu's embed with a large image (on), or plain text with the app's own link preview (off)
+             `{p}set autorole <role>` / `{p}set autorole off`: the role new members get when they join"
         )
     }
 
@@ -191,6 +209,42 @@ impl SetCommand {
                 .set_guild_setting(platform, guild, MUTE_ROLE_KEY, Some(&role.id))?;
             format!(
                 "`mute` now gives **{}**. Make sure it denies Send Messages (and Speak) in the channels, and that my highest role is above it.",
+                role.name
+            )
+        };
+        ctx.reply(&reply).await?;
+        Ok(())
+    }
+
+    async fn autorole(&self, ctx: &CommandContext, guild: &str, arg: &str) -> Result<()> {
+        let platform = ctx.message.platform;
+        let reply = if arg.is_empty() {
+            match self.store.guild_setting(platform, guild, AUTOROLE_KEY)? {
+                Some(r) => format!("New members get <@&{r}> when they join."),
+                None => format!(
+                    "New members get no role. `{}set autorole <role>` sets one.",
+                    ctx.prefix
+                ),
+            }
+        } else if arg.eq_ignore_ascii_case("off") {
+            self.store
+                .set_guild_setting(platform, guild, AUTOROLE_KEY, None)?;
+            "New members won't get a role any more. Members who have it keep it.".to_owned()
+        } else {
+            let role = resolve_role(ctx, guild, arg).await?;
+            if role.id == guild {
+                return Err(Error::Usage("Everyone has @everyone already.".into()));
+            }
+            if role.permissions & STAFF_PERMISSIONS != 0 {
+                return Err(Error::Usage(format!(
+                    "**{}** has moderator or admin permissions, and every newcomer would get                      them. Pick a role without them.",
+                    role.name
+                )));
+            }
+            self.store
+                .set_guild_setting(platform, guild, AUTOROLE_KEY, Some(&role.id))?;
+            format!(
+                "New members will get **{}** when they join. I need Manage Roles, and my highest                  role must be above it.",
                 role.name
             )
         };
@@ -296,7 +350,7 @@ impl Command for SetCommand {
     }
 
     fn help(&self) -> &'static str {
-        "Choose admin and mod roles, the mod-log channel, the mute role, mod DMs and alert embeds (server owner)."
+        "Choose admin and mod roles, the mod-log channel, the mute role, mod DMs, alert embeds and the role new members get (server owner)."
     }
 
     fn level(&self) -> Level {
@@ -315,11 +369,12 @@ impl Command for SetCommand {
             let arg = ctx.args.trim_start()["modlog".len()..].to_owned();
             return self.modlog(&ctx, &guild, &arg).await;
         }
-        if matches!(what.as_str(), "muterole" | "moddm" | "embeds") {
+        if matches!(what.as_str(), "muterole" | "moddm" | "embeds" | "autorole") {
             let arg = ctx.args.trim_start()[what.len()..].trim().to_owned();
             return match what.as_str() {
                 "muterole" => self.muterole(&ctx, &guild, &arg).await,
                 "moddm" => self.moddm(&ctx, &guild, &arg).await,
+                "autorole" => self.autorole(&ctx, &guild, &arg).await,
                 _ => self.embeds(&ctx, &guild, &arg).await,
             };
         }

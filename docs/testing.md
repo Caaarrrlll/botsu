@@ -10,6 +10,8 @@ Until phase 3 publishes an image to Docker Hub, the quickest way is to run from 
    - **Reset Token** and copy it → `DISCORD_TOKEN`.
    - Under **Privileged Gateway Intents**, turn on **Message Content Intent**. Without it the bot
      sees messages but their text is empty, so prefix commands do nothing.
+   - Also turn on **Server Members Intent** for `set autorole`. Without it the bot still works,
+     but new members get no role (the log says so at startup).
    - Optionally turn off **Public Bot** so only you can invite it.
 3. Invite it to each test server (you need Manage Server there). Replace `APP_ID` with the
    **Application ID** from the **General Information** page:
@@ -285,6 +287,7 @@ Fluxer's bulk-delete limits and role API are untested; note anything odd.
 !set muterole <role> | off     ← server owner; give the role "deny Send Messages" yourself
 !set moddm on | off            ← server owner; DM members about actions against them
 !set embeds on | off           ← server owner; alerts as botsu's embed (on) or plain text
+!set autorole <role> | off     ← server owner; the role new members get when they join
 !mod case <n>   !mod cases <@user>   !mod reason <n> <text>   !mod bans
 ```
 
@@ -430,6 +433,22 @@ Settings: `FLUXER_URL` / `FLUXER_TOKEN` for the self-hosted instance as before, 
 | `$freegames remove steam` leaves Epic and GOG | |
 | `$set embeds off`: a plain-text post with the link instead | |
 | Works the same on Fluxer | |
+
+## 13. Autorole (experimental)
+
+First turn on **Server Members Intent** (Discord developer portal → Bot → Privileged Gateway
+Intents) and restart botsu.
+
+| Test | Result |
+|---|---|
+| No "Server Members Intent is off" warning in the log at startup | |
+| `$$set autorole @Admins` (a role with Administrator or Ban Members) is refused | |
+| `$$set autorole Member` confirms; `$$set autorole` shows it | |
+| A second account joins the server and gets **Member** within a second or two | |
+| Same on Fluxer | |
+| Move botsu's role below **Member**: a join logs "couldn't give the autorole" and nothing else breaks | |
+| `$$set autorole off`: the next join gets no role | |
+| `$$admin export` lists the autorole; importing it on another server maps it by name | |
 
 ## Troubleshooting
 

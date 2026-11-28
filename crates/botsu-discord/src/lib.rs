@@ -15,8 +15,8 @@ use botsu_core::{
 use serenity::all::{
     ChannelId, ChannelType, Client, Context, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
     CreateEmbedFooter, CreateMessage, EditMember, EventHandler, GatewayIntents, GetMessages, Guild,
-    GuildChannel, GuildId, Http, Message, MessageId, PartialGuild, PermissionOverwriteType, Ready,
-    Role, RoleId, Timestamp, UserId, VoiceState,
+    GuildChannel, GuildId, Http, Member, Message, MessageId, PartialGuild, PermissionOverwriteType,
+    Ready, Role, RoleId, Timestamp, UserId, VoiceState,
 };
 use serenity::async_trait;
 use songbird::input::core::io::ReadOnlySource;
@@ -857,6 +857,18 @@ impl EventHandler for Handler {
         self.bot.register_invite(Platform::Discord, invite);
     }
 
+    async fn guild_member_addition(&self, ctx: Context, member: Member) {
+        let chat = DiscordChat::new(ctx.http.clone());
+        self.bot
+            .member_joined(
+                &chat,
+                &member.guild_id.to_string(),
+                &member.user.id.to_string(),
+                member.user.bot,
+            )
+            .await;
+    }
+
     async fn message(&self, ctx: Context, msg: Message) {
         let message = translate(msg);
         // serenity already runs each event handler in its own task.
@@ -899,12 +911,47 @@ pub async fn run(
     // MESSAGE_CONTENT is a privileged intent: enable it in the developer portal
     // (Bot → Privileged Gateway Intents) or prefix commands won't see any text.
     // GUILD_VOICE_STATES (not privileged) tells us who is in which voice channel.
+    // GUILD_MEMBERS (privileged, "Server Members Intent") brings member joins for `set autorole`;
+    // without it botsu connects anyway, just without autorole.
     let intents = GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::GUILD_VOICE_STATES
         | GatewayIntents::DIRECT_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT;
 
+    match start(
+        &config,
+        &bot,
+        &voice,
+        intents | GatewayIntents::GUILD_MEMBERS,
+    )
+    .await
+    {
+        Err(e)
+            if matches!(
+                *e,
+                serenity::Error::Gateway(serenity::gateway::GatewayError::DisallowedGatewayIntents)
+            ) =>
+        {
+            tracing::warn!(
+                "Server Members Intent is off: `set autorole` won't give roles. Turn it on in the \
+                 Discord developer portal → your application → Bot → Privileged Gateway Intents"
+            );
+        }
+        other => return other.map_err(|e| start_error(*e)),
+    }
+    start(&config, &bot, &voice, intents)
+        .await
+        .map_err(|e| start_error(*e))
+}
+
+/// Builds the client with `intents` and runs it until it stops.
+async fn start(
+    config: &DiscordConfig,
+    bot: &Arc<Bot>,
+    voice: &Arc<DiscordVoice>,
+    intents: GatewayIntents,
+) -> Result<(), Box<serenity::Error>> {
     let mut client = Client::builder(&config.token, intents)
         .event_handler(Handler {
             bot: bot.clone(),
@@ -912,10 +959,13 @@ pub async fn run(
             invite_admin: config.invite_admin,
         })
         .register_songbird_with(voice.songbird.clone())
-        .await
-        .map_err(err)?;
+        .await?;
     bot.register_chat(Arc::new(DiscordChat::new(client.http.clone())));
-    client.start().await.map_err(|e| match e {
+    Ok(client.start().await?)
+}
+
+fn start_error(e: serenity::Error) -> Error {
+    match e {
         serenity::Error::Gateway(serenity::gateway::GatewayError::DisallowedGatewayIntents) => err(
             "Message Content intent is not enabled for this bot: Discord developer portal → \
                  your application → Bot → Privileged Gateway Intents → Message Content Intent",
@@ -924,5 +974,5 @@ pub async fn run(
             err("Discord rejected DISCORD_TOKEN (reset it on the Bot page and update the env file)")
         }
         other => err(other),
-    })
+    }
 }

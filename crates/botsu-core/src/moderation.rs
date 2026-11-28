@@ -1323,6 +1323,10 @@ Reason: spam"
         async fn user_name(&self, user: &str) -> Result<String> {
             Ok(format!("name-{user}"))
         }
+        async fn add_role(&self, _: &str, user: &str, role: &str) -> Result<()> {
+            self.act(format!("addrole {user} {role}"));
+            Ok(())
+        }
         async fn kick(&self, _: &str, user: &str, _: Option<&str>) -> Result<()> {
             self.act(format!("kick {user}"));
             Ok(())
@@ -1591,5 +1595,28 @@ Reason: spam"
             .contains("You need to be a mod to use `!mod ban`"));
         assert!(s.say("10", "!mod nope").await.contains("no `nope`"));
         assert!(s.say("10", "!mod ban").await.contains("Usage: `!mod ban"));
+    }
+
+    /// `set autorole` (bot.rs `member_joined`): new members get the role, bots don't, and
+    /// without a setting nothing happens.
+    #[tokio::test]
+    async fn autorole_on_join() {
+        let store = Arc::new(Store::open_in_memory().unwrap());
+        let mut bot = Bot::new("!", Vec::<String>::new());
+        bot.enable_server_prefixes(store.clone());
+        let chat = FakeChat::default();
+        bot.member_joined(&chat, "g", "30", false).await;
+        assert!(chat.actions().is_empty());
+        store
+            .set_guild_setting(
+                Platform::Fluxer,
+                "g",
+                crate::server::AUTOROLE_KEY,
+                Some("modr"),
+            )
+            .unwrap();
+        bot.member_joined(&chat, "g", "30", false).await;
+        bot.member_joined(&chat, "g", "31", true).await;
+        assert_eq!(chat.actions(), vec!["addrole 30 modr"]);
     }
 }

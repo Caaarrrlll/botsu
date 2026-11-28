@@ -127,7 +127,7 @@ Main page:
 | Field | Variable | Blank means | Notes |
 |---|---|---|---|
 | Data | `/data` path | `/mnt/user/appdata/botsu` | database and `botsu.env` |
-| Discord token | `DISCORD_TOKEN` | Discord off | masked; needs Message Content Intent |
+| Discord token | `DISCORD_TOKEN` | Discord off | masked; needs Message Content Intent (and Server Members Intent for autorole) |
 | Fluxer token | `FLUXER_TOKEN` | Fluxer off | masked |
 | Fluxer address | `FLUXER_URL` | fluxer.app | your instance's web address |
 | Command prefix | `BOTSU_PREFIX` | `$` | `!` while Red still uses `$` |

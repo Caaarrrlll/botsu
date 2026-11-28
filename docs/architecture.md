@@ -327,6 +327,12 @@ bot was down are lifted right away. If lifting fails it checks the ban list (unb
 drop the row) and otherwise retries for 30 minutes, then reports to the mod-log. A permanent ban
 or an unban cancels the schedule. Timeouts expire on the platform (max 28 days, Discord's limit).
 
+**Autorole** (`set autorole`, `guild_settings.autorole`): adapters pass member joins to
+`Bot::member_joined`, which gives the role to everyone but bots. Roles with moderator or admin
+permissions (Kick, Ban, Administrator, Manage Channels/Server/Messages/Roles/Webhooks, Mention
+Everyone, Moderate Members) can't be set. A failure (missing Manage Roles, role above the bot's) is
+only logged.
+
 **Mutes** give the server's mute role (`set muterole`; its channel permissions are up to the
 server). With a duration, a `scheduled_unmutes` row is lifted by the same 30 s task; if removing
 the role fails and the member no longer has it (or left), the row is dropped, otherwise retried
@@ -420,7 +426,8 @@ through its constructor.
   in LiveKit/libwebrtc unconditionally; their versions are pinned in `Cargo.lock` to the ones
   fluxer-rust was tested with, and Windows builds need `+crt-static` (`.cargo/config.toml`).
 - **serenity 0.12**: gateway + REST only, no cache. Needs the privileged Message Content intent
-  for prefix commands.
+  for prefix commands. It also asks for the privileged Server Members intent (member joins, for
+  autorole); if Discord refuses it, botsu reconnects without it and logs a warning.
 
 ## Server structure copy (`structure.rs`)
 

@@ -16,8 +16,8 @@ use botsu_core::{
 };
 use fluxer::http::Http;
 use fluxer::prelude::{
-    Client, Context, EventHandler, FluxerVoiceConnection, GetMessagesQuery, Guild, GuildSync,
-    Message, PassiveUpdates, Ready, VoiceStateUpdate,
+    Client, Context, EventHandler, FluxerVoiceConnection, GetMessagesQuery, Guild, GuildMemberAdd,
+    GuildSync, Message, PassiveUpdates, Ready, VoiceStateUpdate,
 };
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -926,6 +926,20 @@ impl EventHandler for Handler {
             Some(channel) => states.insert((guild, v.user_id), channel),
             None => states.remove(&(guild, v.user_id)),
         };
+    }
+
+    async fn on_guild_member_add(&self, _ctx: Context, event: GuildMemberAdd) {
+        let Some(user) = event.member.user else {
+            return;
+        };
+        self.bot
+            .member_joined(
+                self.chat.as_ref(),
+                &event.guild_id,
+                &user.id,
+                user.bot.unwrap_or(false),
+            )
+            .await;
     }
 
     async fn on_message(&self, _ctx: Context, msg: Message) {

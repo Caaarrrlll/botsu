@@ -57,6 +57,46 @@ impl Bot {
     /// Per-server prefixes: adds the `setprefix` command (mods). The prefix is read from the
     /// database for each message (a primary-key lookup), so an import or `setprefix` applies
     /// straight away.
+    /// A member joined a server: gives them the server's autorole (`set autorole`), if any.
+    /// Bots are left alone (they get their own role). Failures are logged: there's nobody to
+    /// answer.
+    pub async fn member_joined(
+        &self,
+        chat: &dyn ChatAdapter,
+        guild_id: &str,
+        user_id: &str,
+        is_bot: bool,
+    ) {
+        let Some(store) = &self.store else {
+            return;
+        };
+        if is_bot {
+            return;
+        }
+        let platform = chat.platform();
+        let role = match store.guild_setting(platform, guild_id, crate::server::AUTOROLE_KEY) {
+            Ok(Some(role)) => role,
+            Ok(None) => return,
+            Err(e) => {
+                tracing::warn!(error = %e, "reading the autorole failed");
+                return;
+            }
+        };
+        match chat.add_role(guild_id, user_id, &role).await {
+            Ok(()) => {
+                tracing::debug!(%platform, guild = guild_id, user = user_id, "autorole given")
+            }
+            Err(e) => tracing::warn!(
+                %platform,
+                guild = guild_id,
+                user = user_id,
+                role = %role,
+                error = %e,
+                "couldn't give the autorole (Manage Roles, and my highest role above it?)"
+            ),
+        }
+    }
+
     pub fn enable_server_prefixes(&mut self, store: Arc<crate::storage::Store>) {
         self.register(crate::server::SetPrefixCommand::new(
             store.clone(),
