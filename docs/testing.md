@@ -442,7 +442,9 @@ Intents) and restart botsu.
 | Test | Result |
 |---|---|
 | No "Server Members Intent is off" warning in the log at startup | |
-| `$$set autorole @Admins` (a role with Administrator or Ban Members) is refused | |
+| `$$set autorole @Admins` (a role with Administrator) is refused | |
+| A role with Ban Members gets a warning naming it; adding `confirm` sets it anyway | |
+| A role with only default permissions (Mention Everyone included) is set without a warning | |
 | `$$set autorole Member` confirms; `$$set autorole` shows it | |
 | A second account joins the server and gets **Member** within a second or two | |
 | Same on Fluxer | |

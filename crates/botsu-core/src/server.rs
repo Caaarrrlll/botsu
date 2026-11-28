@@ -22,19 +22,19 @@ use crate::storage::{now, Store};
 /// `guild_settings` key: the role every new member gets when they join (`set autorole`).
 pub const AUTOROLE_KEY: &str = "autorole";
 
-/// Permissions an autorole may not have: every newcomer, including raiders, would get them.
-/// Kick, Ban, Administrator, Manage Channels, Manage Server, Manage Messages, Mention Everyone,
-/// Manage Roles, Manage Webhooks, Moderate Members (same bits on Discord and Fluxer).
-const STAFF_PERMISSIONS: u64 = (1 << 1)
-    | (1 << 2)
-    | ADMINISTRATOR
-    | (1 << 4)
-    | (1 << 5)
-    | (1 << 13)
-    | (1 << 17)
-    | MANAGE_ROLES
-    | (1 << 29)
-    | (1 << 40);
+/// Permissions `set autorole` warns about (every newcomer, raiders included, would get them) and
+/// only sets with `confirm`; Administrator is refused outright. Same bits on Discord and Fluxer.
+/// Mention Everyone isn't here: Discord turns it on for new roles by default.
+const STAFF_PERMISSIONS: &[(u64, &str)] = &[
+    (1 << 1, "Kick Members"),
+    (1 << 2, "Ban Members"),
+    (1 << 4, "Manage Channels"),
+    (1 << 5, "Manage Server"),
+    (1 << 13, "Manage Messages"),
+    (MANAGE_ROLES, "Manage Roles"),
+    (1 << 29, "Manage Webhooks"),
+    (1 << 40, "Timeout Members"),
+];
 
 /// `<@123>`, `<@!123>` or `123` → `123`.
 pub fn parse_user(arg: &str) -> Option<String> {
@@ -181,7 +181,7 @@ const SET_OPTIONS: &[(&str, &str)] = &[
     ),
     (
         "autorole",
-        "<role> | off: the role new members get when they join.",
+        "<role> | off: the role new members get when they join (warns about mod permissions).",
     ),
 ];
 
@@ -255,20 +255,44 @@ impl SetCommand {
                 .set_guild_setting(platform, guild, AUTOROLE_KEY, None)?;
             "New members won't get a role any more. Members who have it keep it.".to_owned()
         } else {
-            let role = resolve_role(ctx, guild, arg).await?;
+            // `<role> confirm` sets a role with staff permissions anyway (not Administrator).
+            let (role_arg, confirmed) = match arg.rsplit_once(char::is_whitespace) {
+                Some((r, last)) if last.eq_ignore_ascii_case("confirm") => (r.trim(), true),
+                _ => (arg, false),
+            };
+            let role = resolve_role(ctx, guild, role_arg).await?;
             if role.id == guild {
                 return Err(Error::Usage("Everyone has @everyone already.".into()));
             }
-            if role.permissions & STAFF_PERMISSIONS != 0 {
+            if role.permissions & ADMINISTRATOR != 0 {
                 return Err(Error::Usage(format!(
-                    "**{}** has moderator or admin permissions, and every newcomer would get                      them. Pick a role without them.",
+                    "**{}** has Administrator: every newcomer, raiders included, could do \
+                     anything on the server. Pick a role without it.",
                     role.name
+                )));
+            }
+            let staff: Vec<&str> = STAFF_PERMISSIONS
+                .iter()
+                .filter(|(bit, _)| role.permissions & bit != 0)
+                .map(|(_, name)| *name)
+                .collect();
+            if !staff.is_empty() && !confirmed {
+                return Err(Error::Usage(format!(
+                    "⚠️ **{}** has **{}**. Every newcomer would get that the moment they join, \
+                     including spam accounts and raiders.\n\
+                     Safer: turn those permissions off for the role in the server's role \
+                     settings, then run this again.\n\
+                     To use it as it is anyway: `{}set autorole {} confirm`",
+                    role.name,
+                    staff.join(", "),
+                    ctx.prefix,
+                    role_arg
                 )));
             }
             self.store
                 .set_guild_setting(platform, guild, AUTOROLE_KEY, Some(&role.id))?;
             format!(
-                "New members will get **{}** when they join. I need Manage Roles, and my highest                  role must be above it.",
+                "New members will get **{}** when they join. I need Manage Roles, and my highest role must be above it.",
                 role.name
             )
         };

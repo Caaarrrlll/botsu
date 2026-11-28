@@ -328,9 +328,11 @@ drop the row) and otherwise retries for 30 minutes, then reports to the mod-log.
 or an unban cancels the schedule. Timeouts expire on the platform (max 28 days, Discord's limit).
 
 **Autorole** (`set autorole`, `guild_settings.autorole`): adapters pass member joins to
-`Bot::member_joined`, which gives the role to everyone but bots. Roles with moderator or admin
-permissions (Kick, Ban, Administrator, Manage Channels/Server/Messages/Roles/Webhooks, Mention
-Everyone, Moderate Members) can't be set. A failure (missing Manage Roles, role above the bot's) is
+`Bot::member_joined`, which gives the role to everyone but bots. A role with Administrator is
+refused. A role with moderator permissions (Kick, Ban, Manage Channels/Server/Messages/Roles/
+Webhooks, Timeout Members) gets a warning naming them, and is only set with
+`set autorole <role> confirm`. Mention Everyone doesn't warn: Discord turns it on for new roles by
+default. A failure (missing Manage Roles, role above the bot's) is
 only logged.
 
 **Mutes** give the server's mute role (`set muterole`; its channel permissions are up to the

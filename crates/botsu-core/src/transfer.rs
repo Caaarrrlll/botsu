@@ -951,7 +951,7 @@ impl ImportCommand {
             ctx.reply_dm(&text, None).await?;
         } else {
             let note = format!(
-                "The preview is long, so it's in the file. `{p}import confirm` within 10                  minutes applies it; `{p}import cancel` drops it.",
+                "The preview is long, so it's in the file. `{p}import confirm` within 10 minutes applies it; `{p}import cancel` drops it.",
                 p = ctx.prefix
             );
             ctx.reply_dm(&note, Some(("import-preview.txt", text.into_bytes())))
