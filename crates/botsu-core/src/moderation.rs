@@ -1573,16 +1573,17 @@ Reason: spam"
     async fn grouped_under_mod() {
         let s = setup();
         let member = s.say("30", "!mod").await;
-        assert!(member.contains("`!mod warnings`"), "{member}");
+        assert!(member.contains("!mod warnings "), "{member}");
         assert!(
-            !member.contains("`!mod ban`"),
+            !member.contains("!mod ban "),
             "only what they may use: {member}"
         );
         let moderator = s.say("10", "!moderation").await;
-        assert!(moderator.contains("`!mod ban`") && moderator.contains("`!mod cleanup`"));
+        assert!(moderator.contains("!mod ban ") && moderator.contains("!mod cleanup "));
 
+        let before = s.chat.all_sent("here").len();
         s.say("30", "!help").await;
-        let help = s.chat.all_sent("here");
+        let help = s.chat.all_sent("here")[before..].to_owned();
         assert_eq!(help.matches("\n!mod ").count(), 1, "{help}");
         assert!(
             !help.contains("\n!moderation"),

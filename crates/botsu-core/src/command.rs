@@ -167,21 +167,33 @@ impl Group {
     }
 
     fn listing(&self, ctx: &CommandContext) -> String {
-        let mut out = format!(
-            "**{}** (`{}{} <command>`):",
-            self.title, ctx.prefix, self.name
-        );
-        for cmd in self.subs.values().filter(|c| c.level() <= ctx.level) {
-            out.push_str(&format!(
-                "\n`{}{} {}`: {}",
-                ctx.prefix,
-                self.name,
-                cmd.name(),
-                cmd.help()
-            ));
-        }
-        out
+        let subs: Vec<(&str, &str)> = self
+            .subs
+            .values()
+            .filter(|c| c.level() <= ctx.level)
+            .map(|c| (c.name(), c.help()))
+            .collect();
+        usage_block(self.title, &format!("{}{}", ctx.prefix, self.name), &subs)
     }
+}
+
+/// A command's subcommands as a code block, laid out like `help`: `**title**`, then one
+/// aligned `<command> <sub>  <what it does>` line each.
+pub fn usage_block(title: &str, command: &str, subs: &[(&str, &str)]) -> String {
+    let width = subs
+        .iter()
+        .map(|(n, _)| n.chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut out = format!("**{title}**\n```\n");
+    for (sub, help) in subs {
+        out.push_str(&format!(
+            "{command} {sub:<width$}  {}\n",
+            help.replace('`', "")
+        ));
+    }
+    out.push_str("```");
+    out
 }
 
 #[async_trait]

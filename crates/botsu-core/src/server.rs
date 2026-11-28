@@ -13,7 +13,7 @@ use async_trait::async_trait;
 
 use crate::adapter::{ChatAdapter, RoleInfo, ADMINISTRATOR, MANAGE_ROLES};
 use crate::alerts::{escape_md, parse_channel, EMBEDS_KEY};
-use crate::command::{Command, CommandContext, Group};
+use crate::command::{usage_block, Command, CommandContext, Group};
 use crate::error::{Error, Result};
 use crate::moderation::{MODLOG_KEY, MOD_DM_KEY, MUTE_ROLE_KEY};
 use crate::permissions::{Level, ADMIN_ROLE, MOD_ROLE};
@@ -155,6 +155,36 @@ impl Command for SetPrefixCommand {
 
 // --- set ------------------------------------------------------------------------------------------
 
+/// `set` options, for `help` and the `set` usage message.
+const SET_OPTIONS: &[(&str, &str)] = &[
+    (
+        "adminrole",
+        "add|remove <role>: a role that counts as admin.",
+    ),
+    ("modrole", "add|remove <role>: a role that counts as mod."),
+    ("roles", "Show who counts as admin and mod here."),
+    (
+        "modlog",
+        "<#channel> | off: where moderation cases are posted.",
+    ),
+    (
+        "muterole",
+        "<role> | off: the role mute gives (set its channel permissions yourself).",
+    ),
+    (
+        "moddm",
+        "on | off: DM members about warns, kicks, bans, timeouts and mutes (off by default).",
+    ),
+    (
+        "embeds",
+        "on | off: alerts as an embed with a large image (on, default) or plain text.",
+    ),
+    (
+        "autorole",
+        "<role> | off: the role new members get when they join.",
+    ),
+];
+
 /// `set adminrole|modrole add|remove <role>` and `set roles`.
 pub struct SetCommand {
     store: Arc<Store>,
@@ -166,16 +196,10 @@ impl SetCommand {
     }
 
     fn usage(p: &str) -> String {
-        format!(
-            "Permissions (server owner):\n\
-             `{p}set adminrole add <role>` / `{p}set adminrole remove <role>`\n\
-             `{p}set modrole add <role>` / `{p}set modrole remove <role>`\n\
-             `{p}set roles`: show who counts as admin and mod here\n\
-             `{p}set modlog <#channel>` / `{p}set modlog off`: where moderation cases are posted
-             `{p}set muterole <role>` / `{p}set muterole off`: the role `mute` gives (set its channel permissions yourself)
-             `{p}set moddm on|off`: DM members when they're warned, kicked, banned, timed out or muted (off by default)\n\
-             `{p}set embeds on|off`: alerts as botsu's embed with a large image (on), or plain text with the app's own link preview (off)
-             `{p}set autorole <role>` / `{p}set autorole off`: the role new members get when they join"
+        usage_block(
+            "Server settings (server owner)",
+            &format!("{p}set"),
+            SET_OPTIONS,
         )
     }
 
@@ -355,6 +379,10 @@ impl Command for SetCommand {
 
     fn level(&self) -> Level {
         Level::ServerOwner
+    }
+
+    fn subcommands(&self, _level: Level) -> Vec<(&'static str, &'static str)> {
+        SET_OPTIONS.to_vec()
     }
 
     async fn run(&self, ctx: CommandContext) -> Result<()> {
