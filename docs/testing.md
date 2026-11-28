@@ -434,7 +434,7 @@ Settings: `FLUXER_URL` / `FLUXER_TOKEN` for the self-hosted instance as before, 
 | `$set embeds off`: a plain-text post with the link instead | |
 | Works the same on Fluxer | |
 
-## 13. Autorole (experimental)
+## 13. Autorole
 
 First turn on **Server Members Intent** (Discord developer portal → Bot → Privileged Gateway
 Intents) and restart botsu.
